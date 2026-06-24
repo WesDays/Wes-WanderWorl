@@ -44,7 +44,7 @@ const double kCritChance = 0.40;
 const int kCritMultiplier = 2;
 
 /// Chance, rolled once each second, that the free-ability bonus is granted:
-/// the next resource-paying ability is cast at no resource cost.
+/// the next damaging, resource-paying ability is cast at no resource cost.
 const double kFreeAbilityChance = 0.05;
 
 /// Chance per ability point spent that the free-ability bonus is granted:
@@ -296,10 +296,13 @@ class CombatEngine {
 
     final ability = kAbilities[index];
 
-    // The free-ability bonus only applies to abilities that actually pay a
-    // resource cost, so it isn't wasted on Energize or zero-cost casts.
-    final castFree =
-        freeAbility && ability.setsResourceTo == null && ability.cost > 0;
+    // The free-ability bonus only applies to abilities that pay a resource cost
+    // AND deal damage (Attack, Rend, Blast), so it isn't spent on Energize,
+    // zero-cost casts, or utility casts like Buff/Heal.
+    final castFree = freeAbility &&
+        ability.setsResourceTo == null &&
+        ability.cost > 0 &&
+        ability.dealsDamage;
 
     if (!castFree && resource < ability.cost) return;
     if (ability.requiresAbilityPoints && abilityPoints == 0) return;

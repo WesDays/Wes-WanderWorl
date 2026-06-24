@@ -70,6 +70,10 @@ class Ability {
   /// index 4 = 5 points). Instant for Blast; the per-tick amount for Rend.
   final List<int>? damageByPoints;
 
+  /// Whether this ability deals damage at all — flat [damage] or a
+  /// point-scaled [damageByPoints] table (covers instant hits and Rend's ticks).
+  bool get dealsDamage => damage > 0 || damageByPoints != null;
+
   /// Damage for [points] spent: the [damageByPoints] entry when point-scaled
   /// (clamped to the table, 0 when no points), otherwise the flat [damage].
   int damageFor(int points) {
