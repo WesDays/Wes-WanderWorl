@@ -21,6 +21,7 @@ class _FixedRandom implements math.Random {
 const _energize = 0;
 const _attack = 3;
 const _rend = 4;
+const _blast = 5;
 const _buff = 6;
 
 void main() {
@@ -135,6 +136,30 @@ void main() {
       e.abilityPoints = 5;
       e.castAbility(_buff); // consumes points; chance = 0.20*5 = guaranteed
       expect(e.freeAbility, isTrue);
+    });
+
+    test('damaging resource abilities consume the free cast', () {
+      for (final index in [_attack, _rend, _blast]) {
+        // 1 point satisfies Rend/Blast's requirement; the per-point re-grant
+        // roll (0.20) fails under noLuck, so it can't mask the consumption.
+        final e = noLuck()
+          ..abilityPoints = 1
+          ..freeAbility = true;
+        final before = e.resource;
+        e.castAbility(index);
+        expect(e.freeAbility, isFalse, reason: '${kAbilities[index].name} should consume');
+        expect(e.resource, before, reason: '${kAbilities[index].name} should pay no resource');
+      }
+    });
+
+    test('Buff does not consume the free cast', () {
+      final e = noLuck()
+        ..abilityPoints = 1
+        ..freeAbility = true;
+      final before = e.resource;
+      e.castAbility(_buff);
+      expect(e.freeAbility, isTrue);
+      expect(e.resource, before - kAbilities[_buff].cost);
     });
   });
 }
