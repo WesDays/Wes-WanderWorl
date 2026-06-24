@@ -11,14 +11,14 @@ import 'state/combat_providers.dart';
 /// How long a floating damage number travels across the screen before removal.
 const Duration kFloatingDamageDuration = Duration(milliseconds: 1500);
 
+/// Inset from the right edge for the rising damage numbers, clearing the
+/// ability-button columns that hug that edge.
+const double kFloatingDamageRightInset = 150;
+
 /// Geometry of one ability-point circle: diameter plus vertical padding on each
 /// side. Used to lay out the circles and to float the effect badges above them.
 const double kPointDiameter = 18;
 const double kPointPadding = 4;
-
-/// Total height of the ability-point column, so badges park just above it.
-const double kAbilityPointsHeight =
-    kMaxAbilityPoints * (kPointDiameter + 2 * kPointPadding);
 
 /// The abilities backing the two timed-effect badges.
 final Ability _rendAbility = kAbilities.firstWhere((a) => a.appliesRend);
@@ -49,8 +49,11 @@ class _GameScreenState extends State<GameScreen> {
   }
 }
 
-/// The whole HUD, laid out for landscape: boss gauge on the left, resource gauge
-/// on the right, ability buttons along the bottom, floating numbers up top.
+/// The whole HUD, laid out to mirror the pre-Flame design now that the app
+/// renders natively in landscape (no `RotatedBox`): the resource gauge runs
+/// across the top, the boss gauge across the bottom, and the ability buttons
+/// stack in two columns hugging the left edge. Floating numbers drift through
+/// the middle band over the Flame world.
 class _Hud extends StatelessWidget {
   const _Hud({required this.game});
 
@@ -61,9 +64,15 @@ class _Hud extends StatelessWidget {
     return SafeArea(
       child: Stack(
         children: [
-          const Align(alignment: Alignment.centerLeft, child: _BossHealthPanel()),
-          const Align(alignment: Alignment.centerRight, child: _ResourcePanel()),
-          Align(alignment: Alignment.bottomCenter, child: _AbilityBar(game: game)),
+          const Align(
+            alignment: Alignment.topCenter,
+            child: _BossHealthPanel(),
+          ),
+          const Align(
+            alignment: Alignment.bottomCenter,
+            child: _ResourcePanel(),
+          ),
+          Align(alignment: Alignment.centerRight, child: _AbilityBar(game: game)),
           const Positioned.fill(child: _FloatingDamageLayer()),
           Positioned.fill(child: _ResetOverlay(game: game)),
         ],
@@ -72,7 +81,7 @@ class _Hud extends StatelessWidget {
   }
 }
 
-/// Boss health gauge plus the running-DPS readout, hugging the left edge.
+/// Boss health gauge plus the running-DPS readout, running across the top.
 class _BossHealthPanel extends ConsumerWidget {
   const _BossHealthPanel();
 
@@ -81,10 +90,10 @@ class _BossHealthPanel extends ConsumerWidget {
     final health = ref.watch(combatProvider.select((s) => s.bossHealth));
     final dps = ref.watch(combatProvider.select((s) => s.averageDps));
     return Padding(
-      padding: const EdgeInsets.only(left: 12),
+      padding: const EdgeInsets.only(top: 12),
       child: Row(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           _BossHealthBar(value: health, max: kBossMaxHealth),
           const SizedBox(width: 8),
@@ -96,7 +105,8 @@ class _BossHealthPanel extends ConsumerWidget {
 }
 
 /// Resource gauge with the ability-point circles and timed-effect badges,
-/// hugging the right edge.
+/// running across the bottom edge. The points sit above the bar, left-aligned
+/// to its start, leaving room to their right for the rend/buff badges.
 class _ResourcePanel extends ConsumerWidget {
   const _ResourcePanel();
 
@@ -110,45 +120,29 @@ class _ResourcePanel extends ConsumerWidget {
     final buffSeconds = ref.watch(combatProvider.select((s) => s.buffSeconds));
 
     return Padding(
-      padding: const EdgeInsets.only(right: 12),
-      child: Row(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.end,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Badges float above the points via a Stack so showing one never
-          // shifts the circles.
-          Stack(
-            alignment: Alignment.bottomCenter,
-            clipBehavior: Clip.none,
+          // Points and active-effect badges share a row above the bar; the
+          // badges trail to the right so they grow into the open space.
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               _AbilityPoints(filled: points, max: kMaxAbilityPoints),
-              if (rendSeconds > 0 || buffSeconds > 0)
-                Positioned(
-                  bottom: kAbilityPointsHeight + 8,
-                  child: Transform.translate(
-                    offset: const Offset(-12, 0),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (buffSeconds > 0)
-                          _EffectIndicator(
-                            ability: _buffAbility,
-                            secondsLeft: buffSeconds,
-                          ),
-                        if (buffSeconds > 0 && rendSeconds > 0)
-                          const SizedBox(height: 8),
-                        if (rendSeconds > 0)
-                          _EffectIndicator(
-                            ability: _rendAbility,
-                            secondsLeft: rendSeconds,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
+              if (buffSeconds > 0) ...[
+                const SizedBox(width: 8),
+                _EffectIndicator(ability: _buffAbility, secondsLeft: buffSeconds),
+              ],
+              if (rendSeconds > 0) ...[
+                const SizedBox(width: 8),
+                _EffectIndicator(ability: _rendAbility, secondsLeft: rendSeconds),
+              ],
             ],
           ),
-          const SizedBox(width: 12),
+          const SizedBox(height: 8),
           _ResourceBar(
             value: resource,
             max: kMaxResource,
@@ -161,7 +155,7 @@ class _ResourcePanel extends ConsumerWidget {
   }
 }
 
-/// The ability buttons: two upright rows (3 then 4) along the bottom edge,
+/// The ability buttons: two upright columns (3 then 4) hugging the right edge,
 /// dimmed while the global cooldown is in flight.
 class _AbilityBar extends ConsumerWidget {
   const _AbilityBar({required this.game});
@@ -175,23 +169,24 @@ class _AbilityBar extends ConsumerWidget {
     final points = ref.watch(combatProvider.select((s) => s.abilityPoints));
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.only(right: 16),
       child: Opacity(
         opacity: onCooldown ? 0.45 : 1.0,
-        child: Column(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _row(0, 3, onCooldown, progress, points),
-            const SizedBox(height: 8),
-            _row(3, 7, onCooldown, progress, points),
+            // 4-button column on the inside, 3-button column hugging the edge.
+            _column(3, 7, onCooldown, progress, points),
+            const SizedBox(width: 8),
+            _column(0, 3, onCooldown, progress, points),
           ],
         ),
       ),
     );
   }
 
-  Widget _row(int start, int end, bool onCooldown, double progress, int points) {
-    return Row(
+  Widget _column(int start, int end, bool onCooldown, double progress, int points) {
+    return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (int i = start; i < end; i++)
@@ -232,7 +227,7 @@ class _ResetOverlay extends ConsumerWidget {
   }
 }
 
-/// Vertical resource gauge that fills from the bottom.
+/// Horizontal resource gauge that fills from the left.
 class _ResourceBar extends StatelessWidget {
   const _ResourceBar({
     required this.value,
@@ -244,7 +239,7 @@ class _ResourceBar extends StatelessWidget {
   final int value;
   final int max;
 
-  /// Regen-cycle progress (0 at bottom, 1 at top) for the moving indicator.
+  /// Regen-cycle progress (0 at left, 1 at right) for the moving indicator.
   final double regenProgress;
 
   /// Whether the free-ability bonus is charged; highlights the bar when so.
@@ -254,8 +249,8 @@ class _ResourceBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final fraction = max == 0 ? 0.0 : (value / max).clamp(0.0, 1.0);
     return SizedBox(
-      width: 40,
-      height: 300,
+      width: 320,
+      height: 40,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -275,10 +270,10 @@ class _ResourceBar extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return Align(
-                  alignment: Alignment.bottomCenter,
+                  alignment: Alignment.centerLeft,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    height: constraints.maxHeight * fraction,
+                    width: constraints.maxWidth * fraction,
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFFF00),
                       borderRadius: BorderRadius.circular(8),
@@ -289,13 +284,13 @@ class _ResourceBar extends StatelessWidget {
             ),
           ),
 
-          // Regen-timing indicator: a white bar climbing the gauge over one
-          // regen cycle, snapping back to the bottom when it restarts.
+          // Regen-timing indicator: a white bar sweeping the gauge over one
+          // regen cycle, snapping back to the left when it restarts.
           Align(
-            // y: 1 (bottom) at cycle start -> -1 (top) at cycle end.
-            alignment: Alignment(0, 1 - 2 * regenProgress),
+            // x: -1 (left) at cycle start -> 1 (right) at cycle end.
+            alignment: Alignment(-1 + 2 * regenProgress, 0),
             child: Container(
-              height: 4,
+              width: 4,
               decoration: BoxDecoration(
                 color: Colors.white,
                 border: Border.all(color: Colors.black, width: 1),
@@ -310,8 +305,8 @@ class _ResourceBar extends StatelessWidget {
   }
 }
 
-/// Vertical boss health gauge that fills from the bottom, mirroring the resource
-/// bar on the opposite edge.
+/// Horizontal boss health gauge that fills from the left, mirroring the
+/// resource bar on the opposite edge.
 class _BossHealthBar extends StatelessWidget {
   const _BossHealthBar({required this.value, required this.max});
 
@@ -322,8 +317,8 @@ class _BossHealthBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final fraction = max == 0 ? 0.0 : (value / max).clamp(0.0, 1.0);
     return SizedBox(
-      width: 40,
-      height: 300,
+      width: 320,
+      height: 40,
       child: Stack(
         alignment: Alignment.center,
         children: [
@@ -336,10 +331,10 @@ class _BossHealthBar extends StatelessWidget {
             child: LayoutBuilder(
               builder: (context, constraints) {
                 return Align(
-                  alignment: Alignment.bottomCenter,
+                  alignment: Alignment.centerLeft,
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
-                    height: constraints.maxHeight * fraction,
+                    width: constraints.maxWidth * fraction,
                     decoration: BoxDecoration(
                       color: const Color(0xFFE53935),
                       borderRadius: BorderRadius.circular(8),
@@ -356,7 +351,7 @@ class _BossHealthBar extends StatelessWidget {
   }
 }
 
-/// Column of circles tracking ability points: [filled] solid, the rest empty.
+/// Row of circles tracking ability points: [filled] solid, the rest empty.
 class _AbilityPoints extends StatelessWidget {
   const _AbilityPoints({required this.filled, required this.max});
 
@@ -373,19 +368,19 @@ class _AbilityPoints extends StatelessWidget {
       _ => const Color(0xFFFFFF00),
     };
 
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         for (int i = 0; i < max; i++)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: kPointPadding),
+            padding: const EdgeInsets.symmetric(horizontal: kPointPadding),
             child: Container(
               width: kPointDiameter,
               height: kPointDiameter,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                // Bottom-up: the lowest [filled] circles are solid.
-                color: i >= max - filled ? fillColor : Colors.black26,
+                // Left-to-right: the leftmost [filled] circles are solid.
+                color: i < filled ? fillColor : Colors.black26,
                 border: Border.all(color: Colors.white24),
               ),
             ),
@@ -478,7 +473,7 @@ class _FloatingDamageLayerState extends ConsumerState<_FloatingDamageLayer>
     return IgnorePointer(
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final width = constraints.maxWidth;
+          final height = constraints.maxHeight;
           return Stack(
             clipBehavior: Clip.none,
             children: [
@@ -490,9 +485,10 @@ class _FloatingDamageLayerState extends ConsumerState<_FloatingDamageLayer>
                     // Hold full opacity, then fade over the last third.
                     final opacity = t < 0.66 ? 1.0 : (1 - (t - 0.66) / 0.34);
                     return Positioned(
-                      top: 60,
-                      // Travel from off the right edge to off the left.
-                      left: width - (width + 80) * t,
+                      // Park just left of the ability buttons on the right edge.
+                      right: kFloatingDamageRightInset,
+                      // Rise from near the bottom toward the top as it ages.
+                      bottom: 40 + (height - 120) * t,
                       child: Opacity(
                         opacity: opacity.clamp(0.0, 1.0),
                         child: child,
@@ -587,6 +583,7 @@ class _OutlinedNumber extends StatelessWidget {
           style: TextStyle(
             fontSize: fontSize,
             fontWeight: FontWeight.bold,
+            decoration: TextDecoration.none,
             foreground: Paint()
               ..style = PaintingStyle.stroke
               ..strokeWidth = 3
@@ -598,6 +595,7 @@ class _OutlinedNumber extends StatelessWidget {
           style: TextStyle(
             fontSize: fontSize,
             fontWeight: FontWeight.bold,
+            decoration: TextDecoration.none,
             color: color,
           ),
         ),
@@ -626,7 +624,7 @@ class _AbilityButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.all(4),
       child: Opacity(
         opacity: enabled ? 1.0 : 0.4,
         child: SizedBox(

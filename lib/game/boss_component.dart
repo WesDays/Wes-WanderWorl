@@ -11,7 +11,7 @@ enum BossState { idle, hit, death }
 /// [SpriteAnimationGroupComponent] state machine drives hit/death reactions.
 class BossComponent extends SpriteAnimationGroupComponent<BossState> {
   BossComponent()
-    : super(anchor: Anchor.center, size: Vector2(176, 220));
+    : super(anchor: Anchor.center, size: Vector2(60, 75));
 
   @override
   Future<void> onLoad() async {

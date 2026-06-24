@@ -21,10 +21,8 @@ const int kRendMaxExtends = 6;
 /// Fractional damage bonus granted while the Buff effect is active (30%).
 const double kBuffDamageBonus = 0.30;
 
-/// Resource the active Rend grants every second.
-const int kRendResourcePerSecond = 2;
-
-/// Extra resource Rend grants on top once every [kRendResourceInterval].
+/// Resource Rend grants on each tick, once every [kRendResourceInterval],
+/// landing together with its damage.
 const int kRendResourceBonus = 2;
 const Duration kRendResourceInterval = Duration(seconds: 3);
 
@@ -57,8 +55,17 @@ const double kFreeAbilityChancePerPoint = 0.20;
 const int kRegenAmount = 20;
 const Duration kRegenInterval = Duration(seconds: 2);
 
+/// Flat resource trickled in every second, separate from the [kRegenAmount]
+/// burst on the [kRegenInterval] tick. Always-on, independent of Rend.
+const int kResourcePerSecond = 2;
+
 /// Cap on ability points; generation beyond this is lost.
 const int kMaxAbilityPoints = 5;
+
+/// How often the published DPS readout is re-sampled. The running average drifts
+/// every frame, so we only refresh the displayed value on this cadence to keep
+/// the number readable.
+const Duration kDpsSampleInterval = Duration(milliseconds: 1500);
 
 double _seconds(Duration d) => d.inMicroseconds / Duration.microsecondsPerSecond;
 
@@ -159,6 +166,11 @@ class CombatEngine {
   /// that drives rend ticks, the buff countdown, and the free-ability roll.
   double _regenAccum = 0;
   double _secondAccum = 0;
+  double _dpsAccum = 0;
+
+  /// The DPS value actually published to the HUD; re-sampled from the running
+  /// average every [kDpsSampleInterval] instead of every frame.
+  double _sampledDps = 0;
 
   int rendDamagePerTick = 0;
   int rendSeconds = 0;
@@ -177,7 +189,11 @@ class CombatEngine {
 
   double get regenProgress => (_regenAccum / _seconds(kRegenInterval)).clamp(0.0, 1.0);
 
-  double get averageDps => elapsedSeconds <= 0 ? 0 : totalDamage / elapsedSeconds;
+  /// The running average over the whole fight; drifts every frame, so the HUD
+  /// reads the [_sampledDps] snapshot instead.
+  double get _liveDps => elapsedSeconds <= 0 ? 0 : totalDamage / elapsedSeconds;
+
+  double get averageDps => _sampledDps;
 
   CombatSnapshot snapshot() => CombatSnapshot(
     resource: resource,
@@ -226,6 +242,16 @@ class CombatEngine {
       _secondAccum -= 1.0;
       _onSecond();
     }
+
+    // Freeze the DPS readout once the boss is dead so it holds its final value.
+    if (!bossDead) {
+      final dpsInterval = _seconds(kDpsSampleInterval);
+      _dpsAccum += dt;
+      while (_dpsAccum >= dpsInterval) {
+        _dpsAccum -= dpsInterval;
+        _sampledDps = _liveDps;
+      }
+    }
   }
 
   /// One second of elapsed combat: rolls the free-ability chance, advances an
@@ -234,13 +260,15 @@ class CombatEngine {
   void _onSecond() {
     if (_random.nextDouble() < kFreeAbilityChance) _grantFreeAbility();
 
+    // Always-on passive trickle, on top of the burst regen tick.
+    resource = (resource + kResourcePerSecond).clamp(0, kMaxResource);
+
     if (rendSeconds > 0) {
-      resource = (resource + kRendResourcePerSecond).clamp(0, kMaxResource);
       rendBonusElapsed++;
       if (rendBonusElapsed >= kRendResourceInterval.inSeconds) {
         rendBonusElapsed = 0;
+        // Rend's resource and damage land together on the same tick.
         resource = (resource + kRendResourceBonus).clamp(0, kMaxResource);
-        // Rend's damage lands on the same cadence as its resource bonus.
         _dealDamage(rendDamagePerTick, _rendAbility);
       }
       rendSeconds--;
@@ -341,6 +369,8 @@ class CombatEngine {
     cooldownRemaining = 0;
     _regenAccum = 0;
     _secondAccum = 0;
+    _dpsAccum = 0;
+    _sampledDps = 0;
     rendDamagePerTick = 0;
     rendSeconds = 0;
     rendExtends = 0;

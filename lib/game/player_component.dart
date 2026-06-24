@@ -11,7 +11,7 @@ enum PlayerState { idle, attack, hit, death }
 /// the [SpriteAnimationGroupComponent] state machine is the part that matters.
 class PlayerComponent extends SpriteAnimationGroupComponent<PlayerState> {
   PlayerComponent()
-    : super(anchor: Anchor.center, size: Vector2(96, 128));
+    : super(anchor: Anchor.center, size: Vector2(40, 54));
 
   @override
   Future<void> onLoad() async {

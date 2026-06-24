@@ -26,8 +26,8 @@ class WanderworldGame extends FlameGame with RiverpodGameMixin {
     await super.onLoad();
     // World origin sits at screen centre; place the duo on either side.
     camera.viewfinder.anchor = Anchor.center;
-    _player = PlayerComponent()..position = Vector2(-320, 40);
-    _boss = BossComponent()..position = Vector2(320, 20);
+    _player = PlayerComponent()..position = Vector2(-70, 20);
+    _boss = BossComponent()..position = Vector2(70, 10);
     world.addAll([_player, _boss]);
   }
 
