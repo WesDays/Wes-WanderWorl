@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flame_riverpod/flame_riverpod.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart' show Color;
 
 import '../state/combat_providers.dart';
@@ -49,9 +50,17 @@ class WanderworldGame extends FlameGame with RiverpodGameMixin {
     // The widget's State backs Riverpod access; skip until it's mounted.
     if (widgetKey?.currentState == null) return;
 
-    // update() runs in the game-loop ticker phase, not during a widget build, so
-    // writing providers here is safe: Riverpod schedules its own listener
-    // notifications rather than rebuilding synchronously.
+    // On the init frame the game mounting forces a GameWidget rebuild, so this
+    // can run while the tree is building/laying out. Mutating a provider then
+    // trips Riverpod's setState guard ("modified a provider while building"), so
+    // defer the publish to after the frame and bail. Steady-state ticks run in
+    // the transient (ticker) phase, where writing is safe.
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => _publishAndRoute());
+      return;
+    }
+
     ref.read(combatProvider.notifier).set(engine.snapshot());
 
     for (final event in engine.drainEvents()) {
