@@ -21,31 +21,37 @@ final combatProvider = NotifierProvider<CombatNotifier, CombatSnapshot>(
   CombatNotifier.new,
 );
 
-/// A single hit the HUD should float. [seq] makes each emission distinct so the
-/// floating layer spawns exactly one badge per hit even if two hits share the
-/// same ability/amount.
+/// A single hit the HUD should float: the source ability, the rolled amount,
+/// and whether it critted.
 class FloatingHit {
-  const FloatingHit(this.seq, this.ability, this.amount, this.crit);
+  const FloatingHit(this.ability, this.amount, this.crit);
 
-  final int seq;
   final Ability ability;
   final int amount;
   final bool crit;
 }
 
-/// Bridges engine [HitEvent]s to the (otherwise unchanged) widget-space floating
-/// damage layer: the game calls [emit] per hit; the layer listens and spawns.
-class FloatingHitNotifier extends Notifier<FloatingHit?> {
-  int _seq = 0;
-
+/// Queue bridging engine [HitEvent]s to the widget-space floating-damage layer:
+/// the game calls [emit] per hit; the layer spawns the pending hits then [clear]s
+/// them. Hits accumulate into a list rather than a single slot because Riverpod
+/// coalesces notifications to the latest state — so when several hits land in
+/// one frame, that state must already hold every one or the earlier hits are
+/// silently dropped.
+class FloatingHitNotifier extends Notifier<List<FloatingHit>> {
   @override
-  FloatingHit? build() => null;
+  List<FloatingHit> build() => const [];
 
   void emit(Ability ability, int amount, bool crit) {
-    state = FloatingHit(_seq++, ability, amount, crit);
+    state = [...state, FloatingHit(ability, amount, crit)];
+  }
+
+  /// Empties the queue once the layer has spawned the pending hits.
+  void clear() {
+    if (state.isNotEmpty) state = const [];
   }
 }
 
-final floatingHitProvider = NotifierProvider<FloatingHitNotifier, FloatingHit?>(
-  FloatingHitNotifier.new,
-);
+final floatingHitProvider =
+    NotifierProvider<FloatingHitNotifier, List<FloatingHit>>(
+      FloatingHitNotifier.new,
+    );

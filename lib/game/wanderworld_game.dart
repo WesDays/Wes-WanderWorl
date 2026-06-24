@@ -49,32 +49,21 @@ class WanderworldGame extends FlameGame with RiverpodGameMixin {
     // The widget's State backs Riverpod access; skip until it's mounted.
     if (widgetKey?.currentState == null) return;
 
-    final snapshot = engine.snapshot();
-    final events = engine.drainEvents();
+    // update() runs in the game-loop ticker phase, not during a widget build, so
+    // writing providers here is safe: Riverpod schedules its own listener
+    // notifications rather than rebuilding synchronously.
+    ref.read(combatProvider.notifier).set(engine.snapshot());
 
-    // Drive component animations now — these are Flame-side and safe inside the
-    // game loop.
-    for (final event in events) {
+    for (final event in engine.drainEvents()) {
       switch (event) {
         case CastEvent():
           _player.playAttack();
-        case HitEvent():
+        case HitEvent(:final ability, :final amount, :final crit):
           _boss.playHit();
+          ref.read(floatingHitProvider.notifier).emit(ability, amount, crit);
         case BossDiedEvent():
           _boss.playDeath();
       }
     }
-
-    // Flame runs update() inside the GameWidget's layout callback, so the widget
-    // tree is locked; modifying a provider here throws. Defer the provider
-    // writes until just after the frame is built.
-    Future(() {
-      ref.read(combatProvider.notifier).set(snapshot);
-      for (final event in events) {
-        if (event case HitEvent(:final ability, :final amount, :final crit)) {
-          ref.read(floatingHitProvider.notifier).emit(ability, amount, crit);
-        }
-      }
-    });
   }
 }

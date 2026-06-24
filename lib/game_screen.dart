@@ -465,9 +465,15 @@ class _FloatingDamageLayerState extends ConsumerState<_FloatingDamageLayer>
 
   @override
   Widget build(BuildContext context) {
-    // Spawn a badge whenever the engine emits a new hit.
+    // Spawn a badge for every queued hit, then drain the queue. Draining keeps
+    // each hit spawned exactly once regardless of how Riverpod batches the
+    // emissions that filled it.
     ref.listen(floatingHitProvider, (prev, next) {
-      if (next != null && next.seq != prev?.seq) _spawn(next);
+      if (next.isEmpty) return;
+      for (final hit in next) {
+        _spawn(hit);
+      }
+      ref.read(floatingHitProvider.notifier).clear();
     });
 
     return IgnorePointer(

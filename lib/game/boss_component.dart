@@ -1,17 +1,23 @@
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 
+import 'actor_component.dart';
 import 'placeholder_sprites.dart';
 
 /// Boss animation states. [hit] is a one-shot flash back to [idle]; [death]
 /// holds once the boss dies.
 enum BossState { idle, hit, death }
 
-/// The boss avatar. Placeholder colour-frame animations; the real
-/// [SpriteAnimationGroupComponent] state machine drives hit/death reactions.
-class BossComponent extends SpriteAnimationGroupComponent<BossState> {
-  BossComponent()
-    : super(anchor: Anchor.center, size: Vector2(60, 75));
+/// The boss avatar. Placeholder colour-frame animations; the [ActorComponent]
+/// state machine drives hit/death reactions.
+class BossComponent extends ActorComponent<BossState> {
+  BossComponent() : super(size: Vector2(60, 75));
+
+  @override
+  BossState get idleState => BossState.idle;
+
+  @override
+  Set<BossState> get holdingStates => const {BossState.death};
 
   @override
   Future<void> onLoad() async {
@@ -32,19 +38,13 @@ class BossComponent extends SpriteAnimationGroupComponent<BossState> {
       ),
     };
     current = BossState.idle;
-
-    animationTickers?[BossState.hit]?.onComplete = () {
-      if (current == BossState.hit) current = BossState.idle;
-    };
+    wireFallbacks();
   }
 
-  void playHit() {
-    if (current == BossState.death) return;
-    animationTickers?[BossState.hit]?.reset();
-    current = BossState.hit;
-  }
+  void playHit() => play(BossState.hit);
 
-  void playDeath() => current = BossState.death;
+  void playDeath() => play(BossState.death);
 
-  void revive() => current = BossState.idle;
+  // Force out of the held death frame back to a fresh idle.
+  void revive() => play(BossState.idle, force: true);
 }

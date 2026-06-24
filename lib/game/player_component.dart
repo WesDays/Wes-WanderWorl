@@ -1,6 +1,7 @@
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 
+import 'actor_component.dart';
 import 'placeholder_sprites.dart';
 
 /// Animation states the player can be in. One-shot states (attack, hit) fall
@@ -8,10 +9,15 @@ import 'placeholder_sprites.dart';
 enum PlayerState { idle, attack, hit, death }
 
 /// The player avatar. Placeholder colour-frame animations stand in for real art;
-/// the [SpriteAnimationGroupComponent] state machine is the part that matters.
-class PlayerComponent extends SpriteAnimationGroupComponent<PlayerState> {
-  PlayerComponent()
-    : super(anchor: Anchor.center, size: Vector2(40, 54));
+/// the [ActorComponent] state machine is the part that matters.
+class PlayerComponent extends ActorComponent<PlayerState> {
+  PlayerComponent() : super(size: Vector2(40, 54));
+
+  @override
+  PlayerState get idleState => PlayerState.idle;
+
+  @override
+  Set<PlayerState> get holdingStates => const {PlayerState.death};
 
   @override
   Future<void> onLoad() async {
@@ -37,18 +43,8 @@ class PlayerComponent extends SpriteAnimationGroupComponent<PlayerState> {
       ),
     };
     current = PlayerState.idle;
-
-    // Return to idle when a one-shot finishes.
-    for (final state in [PlayerState.attack, PlayerState.hit]) {
-      animationTickers?[state]?.onComplete = () {
-        if (current == state) current = PlayerState.idle;
-      };
-    }
+    wireFallbacks();
   }
 
-  void playAttack() {
-    if (current == PlayerState.death) return;
-    animationTickers?[PlayerState.attack]?.reset();
-    current = PlayerState.attack;
-  }
+  void playAttack() => play(PlayerState.attack);
 }

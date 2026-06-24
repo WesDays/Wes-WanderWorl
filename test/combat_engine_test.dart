@@ -52,7 +52,10 @@ void main() {
       final e = noLuck();
       e.resource = 0;
       e.tick(_secondsOf(kRegenInterval));
-      expect(e.resource, kRegenAmount);
+      // Ticking a full kRegenInterval also crosses two 1-second boundaries, so
+      // the per-second trickle stacks on top of the burst. Both are independent.
+      final secondsElapsed = kRegenInterval.inSeconds;
+      expect(e.resource, kRegenAmount + secondsElapsed * kResourcePerSecond);
     });
 
     test('a paying ability spends its cost', () {
