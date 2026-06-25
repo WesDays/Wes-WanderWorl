@@ -101,6 +101,8 @@ const List<Ability> kAbilities = <Ability>[
     cost: 0,
     setsResourceTo: 60,
   ),
+  // Heal deals a little damage on purpose so it counts as a damaging ability and
+  // can consume the free-ability proc; canCrit is off so that chip damage stays flat.
   Ability(
     name: 'Heal',
     icon: Icons.healing,

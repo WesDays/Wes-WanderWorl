@@ -299,8 +299,9 @@ class CombatEngine {
       }
     }
 
-    // Freeze the DPS readout once the boss is dead so it holds its final value.
-    if (!bossDead) {
+    // Freeze the DPS readout once the fight ends — boss or player dead — so it
+    // holds its final value.
+    if (!bossDead && !playerDead) {
       final dpsInterval = _seconds(kDpsSampleInterval);
       _dpsAccum += dt;
       while (_dpsAccum >= dpsInterval) {
@@ -353,8 +354,9 @@ class CombatEngine {
     final ability = kAbilities[index];
 
     // The free-ability bonus only applies to abilities that pay a resource cost
-    // AND deal damage (Attack, Rend, Blast), so it isn't spent on Energize,
-    // zero-cost casts, or utility casts like Buff/Heal.
+    // AND deal damage (Attack, Rend, Blast, Heal), so it isn't spent on Energize,
+    // zero-cost casts, or pure utility casts like Buff. Heal deals damage by
+    // design specifically so it qualifies and can consume the proc.
     final castFree = freeAbility &&
         ability.setsResourceTo == null &&
         ability.cost > 0 &&
