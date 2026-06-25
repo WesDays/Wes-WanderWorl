@@ -37,6 +37,7 @@ class WanderworldGame extends FlameGame with RiverpodGameMixin {
   void resetCombat() {
     engine.reset();
     _boss.revive();
+    _player.revive();
   }
 
   @override
@@ -69,9 +70,30 @@ class WanderworldGame extends FlameGame with RiverpodGameMixin {
           _player.playAttack();
         case HitEvent(:final ability, :final amount, :final crit):
           _boss.playHit();
-          ref.read(floatingHitProvider.notifier).emit(ability, amount, crit);
+          ref.read(floatingHitProvider.notifier).emit(
+                FloatingHit(ability: ability, amount: amount, crit: crit),
+              );
         case BossDiedEvent():
           _boss.playDeath();
+        case PlayerHitEvent(:final amount, :final crit):
+          _player.playHit();
+          // Player-damage floats over the player (left) with no icon.
+          ref.read(floatingHitProvider.notifier).emit(
+                FloatingHit(amount: amount, crit: crit, onPlayer: true),
+              );
+        case PlayerDiedEvent():
+          _player.playDeath();
+        case PlayerHealedEvent(:final ability, :final amount):
+          // Heals float over the player (left) with the ability icon, green.
+          ref.read(floatingHitProvider.notifier).emit(
+                FloatingHit(
+                  ability: ability,
+                  amount: amount,
+                  crit: false,
+                  onPlayer: true,
+                  heal: true,
+                ),
+              );
       }
     }
   }

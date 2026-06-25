@@ -33,6 +33,19 @@ const int kMaxResource = 100;
 /// tunable until encounter pacing is dialled in.
 const int kBossMaxHealth = 500000;
 
+/// Player starting health.
+const int kPlayerMaxHealth = 10000;
+
+/// Inclusive range a single boss swing rolls within before any crit.
+const int kBossDamageMin = 600;
+const int kBossDamageMax = 900;
+
+/// How often the boss swings at the player.
+const Duration kBossAttackInterval = Duration(seconds: 5);
+
+/// Chance each boss swing crits, multiplying its damage by [kCritMultiplier].
+const double kBossCritChance = 0.05;
+
 /// Fractional swing applied to every damage roll (±10%), so identical hits
 /// land on a small spread instead of a fixed number.
 const double kDamageVariance = 0.10;
@@ -97,6 +110,28 @@ class BossDiedEvent extends CombatEvent {
   const BossDiedEvent();
 }
 
+/// The boss landed a swing on the player: the [amount] dealt and whether [crit].
+class PlayerHitEvent extends CombatEvent {
+  const PlayerHitEvent(this.amount, this.crit);
+
+  final int amount;
+  final bool crit;
+}
+
+/// The player reached 0 health this tick.
+class PlayerDiedEvent extends CombatEvent {
+  const PlayerDiedEvent();
+}
+
+/// An ability healed the player: the [ability] it came from and the rolled
+/// [amount] (pre-clamp, so the number matches overheal). Floats over the player.
+class PlayerHealedEvent extends CombatEvent {
+  const PlayerHealedEvent(this.ability, this.amount);
+
+  final Ability ability;
+  final int amount;
+}
+
 /// Immutable read-model the engine publishes for the HUD. Every field the UI
 /// renders is derived from engine state here; widgets watch slices of it.
 class CombatSnapshot {
@@ -104,6 +139,7 @@ class CombatSnapshot {
     required this.resource,
     required this.abilityPoints,
     required this.bossHealth,
+    required this.playerHealth,
     required this.averageDps,
     required this.onCooldown,
     required this.cooldownProgress,
@@ -112,11 +148,13 @@ class CombatSnapshot {
     required this.buffSeconds,
     required this.freeAbility,
     required this.bossDead,
+    required this.playerDead,
   });
 
   final int resource;
   final int abilityPoints;
   final int bossHealth;
+  final int playerHealth;
   final double averageDps;
 
   /// True while the global cooldown is in flight.
@@ -132,6 +170,7 @@ class CombatSnapshot {
   final int buffSeconds;
   final bool freeAbility;
   final bool bossDead;
+  final bool playerDead;
 }
 
 /// Authoritative combat model. Owns all combat state and rules; advanced by
@@ -154,6 +193,7 @@ class CombatEngine {
   int resource = kMaxResource;
   int abilityPoints = 0;
   int bossHealth = kBossMaxHealth;
+  int playerHealth = kPlayerMaxHealth;
   int totalDamage = 0;
 
   /// Combat time accumulated from [tick]; the denominator of the average DPS.
@@ -167,6 +207,9 @@ class CombatEngine {
   double _regenAccum = 0;
   double _secondAccum = 0;
   double _dpsAccum = 0;
+
+  /// Time accumulated toward the boss's next swing at the player.
+  double _bossAttackAccum = 0;
 
   /// The DPS value actually published to the HUD; re-sampled from the running
   /// average every [kDpsSampleInterval] instead of every frame.
@@ -183,6 +226,7 @@ class CombatEngine {
 
   bool get onCooldown => cooldownRemaining > 0;
   bool get bossDead => bossHealth <= 0;
+  bool get playerDead => playerHealth <= 0;
 
   double get cooldownProgress =>
       onCooldown ? (1 - cooldownRemaining / _seconds(kCooldown)).clamp(0.0, 1.0) : 1;
@@ -199,6 +243,7 @@ class CombatEngine {
     resource: resource,
     abilityPoints: abilityPoints,
     bossHealth: bossHealth,
+    playerHealth: playerHealth,
     averageDps: averageDps,
     onCooldown: onCooldown,
     cooldownProgress: cooldownProgress,
@@ -207,6 +252,7 @@ class CombatEngine {
     buffSeconds: buffSeconds,
     freeAbility: freeAbility,
     bossDead: bossDead,
+    playerDead: playerDead,
   );
 
   /// Returns and clears the events queued since the last drain.
@@ -241,6 +287,16 @@ class CombatEngine {
     while (_secondAccum >= 1.0) {
       _secondAccum -= 1.0;
       _onSecond();
+    }
+
+    // The boss swings on its own cadence while both fighters are alive.
+    if (!bossDead && !playerDead) {
+      final attackInterval = _seconds(kBossAttackInterval);
+      _bossAttackAccum += dt;
+      while (_bossAttackAccum >= attackInterval && !playerDead) {
+        _bossAttackAccum -= attackInterval;
+        _bossAttack();
+      }
     }
 
     // Freeze the DPS readout once the boss is dead so it holds its final value.
@@ -290,7 +346,7 @@ class CombatEngine {
   /// application, point grant/consume, Rend extension, and Buff refresh. Queues a
   /// [CastEvent] and starts the cooldown on success.
   void castAbility(int index) {
-    if (bossDead) return;
+    if (bossDead || playerDead) return;
     // Global cooldown: ignore every press while one is in flight.
     if (onCooldown) return;
 
@@ -336,6 +392,11 @@ class CombatEngine {
       critted =
           _dealDamage(_buffedDamage(ability.damageFor(pointsAtCast), buffed), ability);
     }
+    if (ability.heals > 0) {
+      final healed = _rollDamage(ability.heals);
+      playerHealth = (playerHealth + healed).clamp(0, kPlayerMaxHealth);
+      _events.add(PlayerHealedEvent(ability, healed));
+    }
     if (ability.grantsAbilityPoint) {
       // One point per cast, but a crit grants two. Capped: overflow is lost.
       abilityPoints =
@@ -367,12 +428,14 @@ class CombatEngine {
     resource = kMaxResource;
     abilityPoints = 0;
     bossHealth = kBossMaxHealth;
+    playerHealth = kPlayerMaxHealth;
     totalDamage = 0;
     elapsedSeconds = 0;
     cooldownRemaining = 0;
     _regenAccum = 0;
     _secondAccum = 0;
     _dpsAccum = 0;
+    _bossAttackAccum = 0;
     _sampledDps = 0;
     rendDamagePerTick = 0;
     rendSeconds = 0;
@@ -409,12 +472,26 @@ class CombatEngine {
     return (amount * factor).round();
   }
 
+  /// Resolves one boss swing: rolls damage in the [kBossDamageMin]–
+  /// [kBossDamageMax] range, applies a [kBossCritChance] crit, drains the
+  /// player's health (clamped at 0), and queues a [PlayerHitEvent].
+  void _bossAttack() {
+    final crit = _random.nextDouble() < kBossCritChance;
+    final base =
+        kBossDamageMin + _random.nextInt(kBossDamageMax - kBossDamageMin + 1);
+    final dealt = crit ? base * kCritMultiplier : base;
+    final before = playerHealth;
+    playerHealth = (playerHealth - dealt).clamp(0, kPlayerMaxHealth);
+    _events.add(PlayerHitEvent(dealt, crit));
+    if (playerHealth <= 0 && before > 0) _events.add(const PlayerDiedEvent());
+  }
+
   /// Rolls variance + a [kCritChance] crit (doubling), applies it to the boss
   /// (clamped at 0), tallies real damage, and queues a [HitEvent] (plus a
   /// [BossDiedEvent] on the killing blow). Returns whether it critted.
   bool _dealDamage(int amount, Ability source) {
     if (amount <= 0) return false;
-    final crit = _random.nextDouble() < kCritChance;
+    final crit = source.canCrit && _random.nextDouble() < kCritChance;
     final rolled = _rollDamage(amount) * (crit ? kCritMultiplier : 1);
     final before = bossHealth;
     bossHealth = (bossHealth - rolled).clamp(0, kBossMaxHealth);

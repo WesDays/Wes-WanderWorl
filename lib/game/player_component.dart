@@ -47,4 +47,11 @@ class PlayerComponent extends ActorComponent<PlayerState> {
   }
 
   void playAttack() => play(PlayerState.attack);
+
+  void playHit() => play(PlayerState.hit);
+
+  void playDeath() => play(PlayerState.death);
+
+  // Force out of the held death frame back to a fresh idle.
+  void revive() => play(PlayerState.idle, force: true);
 }

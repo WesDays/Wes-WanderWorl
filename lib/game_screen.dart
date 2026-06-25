@@ -11,9 +11,13 @@ import 'state/combat_providers.dart';
 /// How long a floating damage number travels across the screen before removal.
 const Duration kFloatingDamageDuration = Duration(milliseconds: 1500);
 
-/// Inset from the right edge for the rising damage numbers, clearing the
+/// Inset from the right edge for the rising boss-damage numbers, clearing the
 /// ability-button columns that hug that edge.
 const double kFloatingDamageRightInset = 150;
+
+/// Inset from the left edge for the rising player-damage numbers, kept on the
+/// opposite side from the boss-damage feed.
+const double kFloatingDamageLeftInset = 24;
 
 /// Geometry of one ability-point circle: diameter plus vertical padding on each
 /// side. Used to lay out the circles and to float the effect badges above them.
@@ -72,6 +76,10 @@ class _Hud extends StatelessWidget {
             alignment: Alignment.bottomCenter,
             child: _ResourcePanel(),
           ),
+          const Align(
+            alignment: Alignment.bottomLeft,
+            child: _PlayerHealthPanel(),
+          ),
           Align(alignment: Alignment.centerRight, child: _AbilityBar(game: game)),
           const Positioned.fill(child: _FloatingDamageLayer()),
           Positioned.fill(child: _ResetOverlay(game: game)),
@@ -105,7 +113,7 @@ class _BossHealthPanel extends ConsumerWidget {
 }
 
 /// Resource gauge with the ability-point circles and timed-effect badges,
-/// running across the bottom edge. The points sit above the bar, left-aligned
+/// centred across the bottom edge. The points sit above the bar, left-aligned
 /// to its start, leaving room to their right for the rend/buff badges.
 class _ResourcePanel extends ConsumerWidget {
   const _ResourcePanel();
@@ -151,6 +159,21 @@ class _ResourcePanel extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Player health gauge pinned to the bottom-left corner, independent of the
+/// centred resource panel.
+class _PlayerHealthPanel extends ConsumerWidget {
+  const _PlayerHealthPanel();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final playerHealth = ref.watch(combatProvider.select((s) => s.playerHealth));
+    return Padding(
+      padding: const EdgeInsets.only(left: 12, bottom: 12),
+      child: _PlayerHealthBar(value: playerHealth, max: kPlayerMaxHealth),
     );
   }
 }
@@ -202,7 +225,8 @@ class _AbilityBar extends ConsumerWidget {
   }
 }
 
-/// Dim overlay with a Reset button, shown once the boss dies.
+/// Dim overlay with a Reset button, shown once the fight ends — whether the
+/// boss dies (win) or the player dies (game over).
 class _ResetOverlay extends ConsumerWidget {
   const _ResetOverlay({required this.game});
 
@@ -210,17 +234,28 @@ class _ResetOverlay extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final dead = ref.watch(combatProvider.select((s) => s.bossDead));
-    if (!dead) return const SizedBox.shrink();
+    final bossDead = ref.watch(combatProvider.select((s) => s.bossDead));
+    final playerDead = ref.watch(combatProvider.select((s) => s.playerDead));
+    if (!bossDead && !playerDead) return const SizedBox.shrink();
     return ColoredBox(
       color: Colors.black54,
       child: Center(
-        child: ElevatedButton(
-          onPressed: game.resetCombat,
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Text('Reset', style: TextStyle(fontSize: 20)),
-          ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _OutlinedNumber(
+              playerDead ? 'Game Over' : 'Victory',
+              fontSize: 32,
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: game.resetCombat,
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Text('Reset', style: TextStyle(fontSize: 20)),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -351,6 +386,52 @@ class _BossHealthBar extends StatelessWidget {
   }
 }
 
+/// Horizontal player health gauge that fills from the left, styled like the
+/// resource bar but green.
+class _PlayerHealthBar extends StatelessWidget {
+  const _PlayerHealthBar({required this.value, required this.max});
+
+  final int value;
+  final int max;
+
+  @override
+  Widget build(BuildContext context) {
+    final fraction = max == 0 ? 0.0 : (value / max).clamp(0.0, 1.0);
+    return SizedBox(
+      width: 150,
+      height: 40,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.black26,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Colors.white24),
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return Align(
+                  alignment: Alignment.centerLeft,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: constraints.maxWidth * fraction,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF43A047),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          _OutlinedNumber('$value'),
+        ],
+      ),
+    );
+  }
+}
+
 /// Row of circles tracking ability points: [filled] solid, the rest empty.
 class _AbilityPoints extends StatelessWidget {
   const _AbilityPoints({required this.filled, required this.max});
@@ -443,6 +524,8 @@ class _FloatingDamageLayerState extends ConsumerState<_FloatingDamageLayer>
       ability: hit.ability,
       amount: hit.amount,
       crit: hit.crit,
+      onPlayer: hit.onPlayer,
+      heal: hit.heal,
       controller: controller,
     );
     controller.addStatusListener((status) {
@@ -491,8 +574,10 @@ class _FloatingDamageLayerState extends ConsumerState<_FloatingDamageLayer>
                     // Hold full opacity, then fade over the last third.
                     final opacity = t < 0.66 ? 1.0 : (1 - (t - 0.66) / 0.34);
                     return Positioned(
-                      // Park just left of the ability buttons on the right edge.
-                      right: kFloatingDamageRightInset,
+                      // Boss-damage parks just left of the ability buttons on
+                      // the right edge; player-damage hugs the opposite edge.
+                      left: f.onPlayer ? kFloatingDamageLeftInset : null,
+                      right: f.onPlayer ? null : kFloatingDamageRightInset,
                       // Rise from near the bottom toward the top as it ages.
                       bottom: 40 + (height - 120) * t,
                       child: Opacity(
@@ -505,6 +590,7 @@ class _FloatingDamageLayerState extends ConsumerState<_FloatingDamageLayer>
                     ability: f.ability,
                     amount: f.amount,
                     crit: f.crit,
+                    heal: f.heal,
                   ),
                 ),
             ],
@@ -523,47 +609,64 @@ class _FloatingDamage {
     required this.ability,
     required this.amount,
     required this.crit,
+    required this.onPlayer,
+    required this.heal,
     required this.controller,
   });
 
   final int id;
-  final Ability ability;
+  final Ability? ability;
   final int amount;
   final bool crit;
+
+  /// Floats over the player (left) rather than the boss (right).
+  final bool onPlayer;
+
+  /// Renders as a green "+amount" restore instead of damage.
+  final bool heal;
   final AnimationController controller;
 }
 
 /// A floating hit: the ability's icon next to its rolled damage. Crits read
-/// larger and amber.
+/// larger and amber; heals read green with a leading "+".
 class _FloatingDamageBadge extends StatelessWidget {
   const _FloatingDamageBadge({
-    required this.ability,
+    this.ability,
     required this.amount,
     this.crit = false,
+    this.heal = false,
   });
 
-  final Ability ability;
+  /// Source ability for the leading icon; null (player damage) shows no icon.
+  final Ability? ability;
   final int amount;
   final bool crit;
+  final bool heal;
 
   @override
   Widget build(BuildContext context) {
+    final ability = this.ability;
+    // Heals use the ability's own colour for its icon; damage tints by ability.
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ability.iconAsset != null
-            ? Image.asset(
-                ability.iconAsset!,
-                width: 22,
-                height: 22,
-                color: ability.color,
-                filterQuality: FilterQuality.medium,
-              )
-            : Icon(ability.icon, color: ability.color, size: 22),
-        const SizedBox(width: 4),
+        if (ability != null) ...[
+          ability.iconAsset != null
+              ? Image.asset(
+                  ability.iconAsset!,
+                  width: 22,
+                  height: 22,
+                  color: ability.color,
+                  filterQuality: FilterQuality.medium,
+                )
+              : Icon(ability.icon, color: ability.color, size: 22),
+          const SizedBox(width: 4),
+        ],
         _OutlinedNumber(
-          '$amount',
-          color: crit ? const Color(0xFFFFC107) : Colors.white,
+          heal ? '+$amount' : '$amount',
+          color: heal
+              ? const Color(0xFF66BB6A)
+              : (crit ? const Color(0xFFFFC107) : Colors.white),
           fontSize: crit ? 18 : 16,
         ),
       ],
