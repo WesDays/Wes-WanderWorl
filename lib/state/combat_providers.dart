@@ -21,14 +21,24 @@ final combatProvider = NotifierProvider<CombatNotifier, CombatSnapshot>(
   CombatNotifier.new,
 );
 
-/// A single hit the HUD should float: the source ability, the rolled amount,
-/// and whether it critted.
+/// A single hit the HUD should float: the rolled amount, whether it critted,
+/// and the source [ability] (null for damage dealt to the player, which floats
+/// without an icon). [onPlayer] floats it over the player rather than the boss;
+/// [heal] renders it as a green "+amount" restore instead of damage.
 class FloatingHit {
-  const FloatingHit(this.ability, this.amount, this.crit);
+  const FloatingHit({
+    this.ability,
+    required this.amount,
+    required this.crit,
+    this.onPlayer = false,
+    this.heal = false,
+  });
 
-  final Ability ability;
+  final Ability? ability;
   final int amount;
   final bool crit;
+  final bool onPlayer;
+  final bool heal;
 }
 
 /// Queue bridging engine [HitEvent]s to the widget-space floating-damage layer:
@@ -41,8 +51,8 @@ class FloatingHitNotifier extends Notifier<List<FloatingHit>> {
   @override
   List<FloatingHit> build() => const [];
 
-  void emit(Ability ability, int amount, bool crit) {
-    state = [...state, FloatingHit(ability, amount, crit)];
+  void emit(FloatingHit hit) {
+    state = [...state, hit];
   }
 
   /// Empties the queue once the layer has spawned the pending hits.

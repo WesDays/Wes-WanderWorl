@@ -20,6 +20,8 @@ class Ability {
     this.appliesBuff = false,
     this.damage = 0,
     this.damageByPoints,
+    this.heals = 0,
+    this.canCrit = true,
   });
 
   final String name;
@@ -70,6 +72,12 @@ class Ability {
   /// index 4 = 5 points). Instant for Blast; the per-tick amount for Rend.
   final List<int>? damageByPoints;
 
+  /// Health restored to the player per cast.
+  final int heals;
+
+  /// Whether this ability's damage can roll a critical hit.
+  final bool canCrit;
+
   /// Whether this ability deals damage at all — flat [damage] or a
   /// point-scaled [damageByPoints] table (covers instant hits and Rend's ticks).
   bool get dealsDamage => damage > 0 || damageByPoints != null;
@@ -93,7 +101,18 @@ const List<Ability> kAbilities = <Ability>[
     cost: 0,
     setsResourceTo: 60,
   ),
-  Ability(name: 'Heal', icon: Icons.healing, color: Color(0xFF29B6F6)),
+  // Heal deals a little damage on purpose so it counts as a damaging ability and
+  // can consume the free-ability proc; canCrit is off so that chip damage stays flat.
+  Ability(
+    name: 'Heal',
+    icon: Icons.healing,
+    color: Color(0xFF29B6F6),
+    cost: 40,
+    grantsAbilityPoint: true,
+    damage: 350,
+    heals: 2000,
+    canCrit: false,
+  ),
   Ability(name: '???', icon: Icons.help_outline, color: Color(0xFFFDD835)),
   Ability(
     name: 'Attack',
