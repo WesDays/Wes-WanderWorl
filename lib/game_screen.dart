@@ -290,26 +290,32 @@ class _GameOverScreen extends ConsumerWidget {
     final bossDead = ref.watch(combatProvider.select((s) => s.bossDead));
     final playerDead = ref.watch(combatProvider.select((s) => s.playerDead));
     if (!bossDead && !playerDead) return const SizedBox.shrink();
-    return ColoredBox(
-      color: Colors.black87,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _OutlinedNumber(
-              playerDead ? 'Defeat' : 'Victory',
-              fontSize: 40,
-            ),
-            const SizedBox(height: 24),
-            // Run-summary stats will go here.
-            FilledButton(
-              onPressed: onExitToMenu,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                child: Text('Main Menu', style: TextStyle(fontSize: 20)),
+    // The barrier swallows stray taps so the controls underneath (including the
+    // UI-only pause button) stay inert once the run has ended.
+    return GestureDetector(
+      onTap: () {},
+      behavior: HitTestBehavior.opaque,
+      child: ColoredBox(
+        color: Colors.black87,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _OutlinedNumber(
+                playerDead ? 'Defeat' : 'Victory',
+                fontSize: 40,
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              // Run-summary stats will go here.
+              FilledButton(
+                onPressed: onExitToMenu,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Text('Main Menu', style: TextStyle(fontSize: 20)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
