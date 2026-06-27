@@ -22,6 +22,7 @@ class Ability {
     this.damageByPoints,
     this.heals = 0,
     this.canCrit = true,
+    this.opensPauseMenu = false,
   });
 
   final String name;
@@ -78,6 +79,10 @@ class Ability {
   /// Whether this ability's damage can roll a critical hit.
   final bool canCrit;
 
+  /// Whether pressing this button opens the pause menu instead of casting. Such
+  /// a button is purely UI: it touches no combat state (resource, cooldown, …).
+  final bool opensPauseMenu;
+
   /// Whether this ability deals damage at all — flat [damage] or a
   /// point-scaled [damageByPoints] table (covers instant hits and Rend's ticks).
   bool get dealsDamage => damage > 0 || damageByPoints != null;
@@ -113,7 +118,12 @@ const List<Ability> kAbilities = <Ability>[
     heals: 2000,
     canCrit: false,
   ),
-  Ability(name: '???', icon: Icons.help_outline, color: Color(0xFFFDD835)),
+  Ability(
+    name: 'Pause',
+    icon: Icons.pause,
+    color: Color(0xFFFDD835),
+    opensPauseMenu: true,
+  ),
   Ability(
     name: 'Attack',
     icon: Icons.gps_fixed,

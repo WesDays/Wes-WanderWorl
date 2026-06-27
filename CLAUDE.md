@@ -44,12 +44,18 @@ What works today:
   ignored; a darkened **clock-swipe** dial sweeps/empties on each button and the
   bar dims until the cooldown ends.
 - Floating damage numbers drift across the top (widget-space; triggered by engine
-  hit events). Boss death shows a dim **Reset** overlay that restarts the fight.
+  hit events). The app boots to a **main menu**; Start launches a run, and when
+  the fight ends (boss or player at 0) a single **game-over** landing page offers
+  a button back to the menu (where run stats will surface later).
 
 ## Code map
 
 - `lib/main.dart` — app entry; locks **landscape**, wraps the app in `ProviderScope`,
-  dark theme, hosts `GameScreen`.
+  dark theme. An `_AppShell` switches between the menu and an active run; each run
+  mounts a fresh `GameScreen` (fresh game/engine), so no reset plumbing is needed.
+- `lib/main_menu_screen.dart` — `MainMenuScreen`, the landing page shown on launch
+  and returned to when a run ends; its Start button begins a new run. Future
+  talents/stats areas will hang off here.
 - `lib/game/combat_engine.dart` — **the source of truth.** `CombatEngine` owns all
   combat state and rules with no Flutter view concerns; advanced by `tick(dt)`,
   mutated by `castAbility(index)`. Publishes an immutable `CombatSnapshot` for the
@@ -64,8 +70,9 @@ What works today:
 - `lib/game/wanderworld_game.dart` — `WanderworldGame` (`FlameGame` +
   `RiverpodGameMixin`). Owns the engine and world; each frame ticks the engine,
   publishes the snapshot to `combatProvider`, and routes drained events to the
-  player/boss animations and `floatingHitProvider`. `castAbility`/`resetCombat` are
-  the HUD's input entry points.
+  player/boss animations and `floatingHitProvider`. `castAbility` is the HUD's
+  input entry point; `resetCombat` restarts the fight in place (currently unused —
+  runs start fresh via a new `GameScreen` — but kept for a future Retry).
 - `lib/game/player_component.dart`, `lib/game/boss_component.dart` —
   `SpriteAnimationGroupComponent` state machines (idle/attack/hit/death). One-shot
   states fall back to idle on completion.

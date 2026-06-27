@@ -31,7 +31,10 @@ final Ability _buffAbility = kAbilities.firstWhere((a) => a.appliesBuff);
 /// Hosts the Flame game and its HUD overlay. Combat state lives in the engine;
 /// the HUD reads it through Riverpod, so this widget owns no combat state.
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key});
+  const GameScreen({super.key, required this.onExitToMenu});
+
+  /// Returns to the main menu, ending the current run.
+  final VoidCallback onExitToMenu;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -47,7 +50,10 @@ class _GameScreenState extends State<GameScreen> {
     return RiverpodAwareGameWidget<WanderworldGame>(
       key: _gameKey,
       game: _game,
-      overlayBuilderMap: {'hud': (context, game) => _Hud(game: game)},
+      overlayBuilderMap: {
+        'hud': (context, game) =>
+            _Hud(game: game, onExitToMenu: widget.onExitToMenu),
+      },
       initialActiveOverlays: const ['hud'],
     );
   }
@@ -58,10 +64,30 @@ class _GameScreenState extends State<GameScreen> {
 /// across the top, the boss gauge across the bottom, and the ability buttons
 /// stack in two columns hugging the left edge. Floating numbers drift through
 /// the middle band over the Flame world.
-class _Hud extends StatelessWidget {
-  const _Hud({required this.game});
+class _Hud extends StatefulWidget {
+  const _Hud({required this.game, required this.onExitToMenu});
 
   final WanderworldGame game;
+  final VoidCallback onExitToMenu;
+
+  @override
+  State<_Hud> createState() => _HudState();
+}
+
+class _HudState extends State<_Hud> {
+  bool _paused = false;
+
+  // Pausing the Flame engine stops update(), which freezes the engine tick,
+  // animations, and the published snapshot — i.e. all gameplay halts.
+  void _pause() {
+    widget.game.pauseEngine();
+    setState(() => _paused = true);
+  }
+
+  void _resume() {
+    widget.game.resumeEngine();
+    setState(() => _paused = false);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -80,9 +106,21 @@ class _Hud extends StatelessWidget {
             alignment: Alignment.bottomLeft,
             child: _PlayerHealthPanel(),
           ),
-          Align(alignment: Alignment.centerRight, child: _AbilityBar(game: game)),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _AbilityBar(game: widget.game, onPause: _pause),
+          ),
           const Positioned.fill(child: _FloatingDamageLayer()),
-          Positioned.fill(child: _ResetOverlay(game: game)),
+          Positioned.fill(
+            child: _GameOverScreen(onExitToMenu: widget.onExitToMenu),
+          ),
+          if (_paused)
+            Positioned.fill(
+              child: _PauseMenu(
+                onResume: _resume,
+                onExitToMenu: widget.onExitToMenu,
+              ),
+            ),
         ],
       ),
     );
@@ -181,9 +219,12 @@ class _PlayerHealthPanel extends ConsumerWidget {
 /// The ability buttons: two upright columns (3 then 4) hugging the right edge,
 /// dimmed while the global cooldown is in flight.
 class _AbilityBar extends ConsumerWidget {
-  const _AbilityBar({required this.game});
+  const _AbilityBar({required this.game, required this.onPause});
 
   final WanderworldGame game;
+
+  /// Opens the pause menu when the pause button is pressed.
+  final VoidCallback onPause;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -213,49 +254,113 @@ class _AbilityBar extends ConsumerWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         for (int i = start; i < end; i++)
-          _AbilityButton(
-            ability: kAbilities[i],
-            onPressed: () => game.castAbility(i),
-            onCooldown: onCooldown,
-            cooldownProgress: progress,
-            enabled: !kAbilities[i].requiresAbilityPoints || points > 0,
-          ),
+          if (kAbilities[i].opensPauseMenu)
+            // The pause button is UI-only: it ignores the global cooldown and
+            // never spends resource, so it stays live and shows no clock-swipe.
+            _AbilityButton(
+              ability: kAbilities[i],
+              onPressed: onPause,
+              onCooldown: false,
+              cooldownProgress: 0,
+            )
+          else
+            _AbilityButton(
+              ability: kAbilities[i],
+              onPressed: () => game.castAbility(i),
+              onCooldown: onCooldown,
+              cooldownProgress: progress,
+              enabled: !kAbilities[i].requiresAbilityPoints || points > 0,
+            ),
       ],
     );
   }
 }
 
-/// Dim overlay with a Reset button, shown once the fight ends — whether the
-/// boss dies (win) or the player dies (game over).
-class _ResetOverlay extends ConsumerWidget {
-  const _ResetOverlay({required this.game});
+/// End-of-run landing page, shown once the fight ends — whether the boss dies
+/// (win) or the player dies (loss). A single screen for both outcomes; its
+/// button returns to the main menu. Run stats (biggest hit, total healing, …)
+/// will surface here later.
+class _GameOverScreen extends ConsumerWidget {
+  const _GameOverScreen({required this.onExitToMenu});
 
-  final WanderworldGame game;
+  final VoidCallback onExitToMenu;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bossDead = ref.watch(combatProvider.select((s) => s.bossDead));
     final playerDead = ref.watch(combatProvider.select((s) => s.playerDead));
     if (!bossDead && !playerDead) return const SizedBox.shrink();
-    return ColoredBox(
-      color: Colors.black54,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _OutlinedNumber(
-              playerDead ? 'Game Over' : 'Victory',
-              fontSize: 32,
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: game.resetCombat,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Text('Reset', style: TextStyle(fontSize: 20)),
+    // The barrier swallows stray taps so the controls underneath (including the
+    // UI-only pause button) stay inert once the run has ended.
+    return GestureDetector(
+      onTap: () {},
+      behavior: HitTestBehavior.opaque,
+      child: ColoredBox(
+        color: Colors.black87,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _OutlinedNumber(
+                playerDead ? 'Defeat' : 'Victory',
+                fontSize: 40,
               ),
-            ),
-          ],
+              const SizedBox(height: 24),
+              // Run-summary stats will go here.
+              FilledButton(
+                onPressed: onExitToMenu,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Text('Main Menu', style: TextStyle(fontSize: 20)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Modal pause menu, shown while the engine is paused (see [_HudState]). The
+/// barrier swallows stray taps so the controls underneath stay inert; Resume
+/// unpauses, Main Menu ends the run.
+class _PauseMenu extends StatelessWidget {
+  const _PauseMenu({required this.onResume, required this.onExitToMenu});
+
+  final VoidCallback onResume;
+  final VoidCallback onExitToMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () {},
+      behavior: HitTestBehavior.opaque,
+      child: ColoredBox(
+        color: Colors.black87,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const _OutlinedNumber('Paused', fontSize: 40),
+              const SizedBox(height: 24),
+              FilledButton(
+                onPressed: onResume,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Text('Resume', style: TextStyle(fontSize: 20)),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: onExitToMenu,
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Text('Main Menu', style: TextStyle(fontSize: 20)),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

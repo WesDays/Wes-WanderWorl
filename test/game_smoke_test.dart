@@ -13,6 +13,6 @@ void main() {
   });
 
   test('GameScreen can be instantiated', () {
-    expect(const GameScreen(), isA<GameScreen>());
+    expect(GameScreen(onExitToMenu: () {}), isA<GameScreen>());
   });
 }
