@@ -7,6 +7,7 @@ import 'clock_swipe.dart';
 import 'game/combat_engine.dart';
 import 'game/wanderworld_game.dart';
 import 'state/combat_providers.dart';
+import 'talents/talent_modifiers.dart';
 
 /// How long a floating damage number travels across the screen before removal.
 const Duration kFloatingDamageDuration = Duration(milliseconds: 1500);
@@ -31,10 +32,26 @@ final Ability _buffAbility = kAbilities.firstWhere((a) => a.appliesBuff);
 /// Hosts the Flame game and its HUD overlay. Combat state lives in the engine;
 /// the HUD reads it through Riverpod, so this widget owns no combat state.
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, required this.onExitToMenu});
+  const GameScreen({
+    super.key,
+    required this.onExitToMenu,
+    required this.onEncounterEnded,
+    this.modifiers = const TalentModifiers(),
+    this.startingHealth,
+  });
 
-  /// Returns to the main menu, ending the current run.
+  /// Returns to the main menu, abandoning the current run (used by Pause).
   final VoidCallback onExitToMenu;
+
+  /// Fires once when the fight ends, reporting the outcome and the player's
+  /// remaining health (for victory carryover). The shell shows the end screen.
+  final void Function(bool won, int remainingHealth) onEncounterEnded;
+
+  /// Talent modifiers for this encounter's engine.
+  final TalentModifiers modifiers;
+
+  /// Health to begin at; null = full. Set on Continue to carry HP forward.
+  final int? startingHealth;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -43,7 +60,10 @@ class GameScreen extends StatefulWidget {
 class _GameScreenState extends State<GameScreen> {
   final GlobalKey<RiverpodAwareGameWidgetState<WanderworldGame>> _gameKey =
       GlobalKey();
-  late final WanderworldGame _game = WanderworldGame();
+  late final WanderworldGame _game = WanderworldGame(
+    modifiers: widget.modifiers,
+    startingHealth: widget.startingHealth,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -51,8 +71,11 @@ class _GameScreenState extends State<GameScreen> {
       key: _gameKey,
       game: _game,
       overlayBuilderMap: {
-        'hud': (context, game) =>
-            _Hud(game: game, onExitToMenu: widget.onExitToMenu),
+        'hud': (context, game) => _Hud(
+          game: game,
+          onExitToMenu: widget.onExitToMenu,
+          onEncounterEnded: widget.onEncounterEnded,
+        ),
       },
       initialActiveOverlays: const ['hud'],
     );
@@ -65,10 +88,15 @@ class _GameScreenState extends State<GameScreen> {
 /// stack in two columns hugging the left edge. Floating numbers drift through
 /// the middle band over the Flame world.
 class _Hud extends StatefulWidget {
-  const _Hud({required this.game, required this.onExitToMenu});
+  const _Hud({
+    required this.game,
+    required this.onExitToMenu,
+    required this.onEncounterEnded,
+  });
 
   final WanderworldGame game;
   final VoidCallback onExitToMenu;
+  final void Function(bool won, int remainingHealth) onEncounterEnded;
 
   @override
   State<_Hud> createState() => _HudState();
@@ -112,7 +140,7 @@ class _HudState extends State<_Hud> {
           ),
           const Positioned.fill(child: _FloatingDamageLayer()),
           Positioned.fill(
-            child: _GameOverScreen(onExitToMenu: widget.onExitToMenu),
+            child: _EncounterEndWatcher(onEnded: widget.onEncounterEnded),
           ),
           if (_paused)
             Positioned.fill(
@@ -159,6 +187,7 @@ class _ResourcePanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final resource = ref.watch(combatProvider.select((s) => s.resource));
+    final maxResource = ref.watch(combatProvider.select((s) => s.maxResource));
     final regenProgress = ref.watch(combatProvider.select((s) => s.regenProgress));
     final free = ref.watch(combatProvider.select((s) => s.freeAbility));
     final points = ref.watch(combatProvider.select((s) => s.abilityPoints));
@@ -191,7 +220,7 @@ class _ResourcePanel extends ConsumerWidget {
           const SizedBox(height: 8),
           _ResourceBar(
             value: resource,
-            max: kMaxResource,
+            max: maxResource,
             regenProgress: regenProgress,
             free: free,
           ),
@@ -209,9 +238,11 @@ class _PlayerHealthPanel extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final playerHealth = ref.watch(combatProvider.select((s) => s.playerHealth));
+    final maxPlayerHealth =
+        ref.watch(combatProvider.select((s) => s.maxPlayerHealth));
     return Padding(
       padding: const EdgeInsets.only(left: 12, bottom: 12),
-      child: _PlayerHealthBar(value: playerHealth, max: kPlayerMaxHealth),
+      child: _PlayerHealthBar(value: playerHealth, max: maxPlayerHealth),
     );
   }
 }
@@ -276,49 +307,42 @@ class _AbilityBar extends ConsumerWidget {
   }
 }
 
-/// End-of-run landing page, shown once the fight ends — whether the boss dies
-/// (win) or the player dies (loss). A single screen for both outcomes; its
-/// button returns to the main menu. Run stats (biggest hit, total healing, …)
-/// will surface here later.
-class _GameOverScreen extends ConsumerWidget {
-  const _GameOverScreen({required this.onExitToMenu});
+/// Watches for the fight ending and reports it up exactly once, so the app
+/// shell can show the (separate) victory/defeat screen. A dimming barrier
+/// freezes the frozen game underneath during the one-frame handoff; it carries
+/// no buttons — the shell owns end-of-encounter choices now.
+class _EncounterEndWatcher extends ConsumerStatefulWidget {
+  const _EncounterEndWatcher({required this.onEnded});
 
-  final VoidCallback onExitToMenu;
+  final void Function(bool won, int remainingHealth) onEnded;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_EncounterEndWatcher> createState() =>
+      _EncounterEndWatcherState();
+}
+
+class _EncounterEndWatcherState extends ConsumerState<_EncounterEndWatcher> {
+  bool _reported = false;
+
+  @override
+  Widget build(BuildContext context) {
     final bossDead = ref.watch(combatProvider.select((s) => s.bossDead));
     final playerDead = ref.watch(combatProvider.select((s) => s.playerDead));
-    if (!bossDead && !playerDead) return const SizedBox.shrink();
-    // The barrier swallows stray taps so the controls underneath (including the
-    // UI-only pause button) stay inert once the run has ended.
-    return GestureDetector(
-      onTap: () {},
-      behavior: HitTestBehavior.opaque,
-      child: ColoredBox(
-        color: Colors.black87,
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _OutlinedNumber(
-                playerDead ? 'Defeat' : 'Victory',
-                fontSize: 40,
-              ),
-              const SizedBox(height: 24),
-              // Run-summary stats will go here.
-              FilledButton(
-                onPressed: onExitToMenu,
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                  child: Text('Main Menu', style: TextStyle(fontSize: 20)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    final ended = bossDead || playerDead;
+    if (!ended) return const SizedBox.shrink();
+
+    if (!_reported) {
+      _reported = true;
+      final remaining = ref.read(combatProvider).playerHealth;
+      // Defer to after this frame: the shell will swap screens, which can't
+      // happen mid-build.
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => widget.onEnded(bossDead, remaining),
+      );
+    }
+
+    // Brief dimming barrier; also swallows stray taps until the shell takes over.
+    return const IgnorePointer(child: ColoredBox(color: Colors.black87));
   }
 }
 

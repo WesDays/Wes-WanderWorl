@@ -1,0 +1,77 @@
+## A. Generic Offense
+1. 2/4/6/8/10% damage to 'Attack', 'Rend', and 'Blast'
+2. 20/25/30% additional damage to boss when its under 25% HP
+3. 1/2/3% stacking damage (max stack = 3) for not letting 1.4 sec pass between GCDs
+4. every 15/12/9 casts your next ability deals 20% more damage
+5. increase player speed by 10% (Max 20)
+
+## B. Initial
+1. 5/10/15/20/25% damage to all abilities in the first 5 sec of encounter
+2. Start encounter with 1/2/3/4/5 ability points
+3.#-# Start with 1/2/3/4/5 points worth of buff active
+4.#-# Additional 20/30/40/50/60% crit chance on first ability
+5. 20/40/60/80/100% chance to avoid first damage done in the first 10 sec of encounter
+6. Reduce all damage taken by 10% for first 5/10/15/20/25 sec of encounter
+
+## C. Crit
+1. increase crit chance by 2.5% (Max 8)
+2. crit deal 2.1/2.2/2.3/2.4/2.5x damage
+3. crits gain 1/2/3/4/5 resources
+4. 2 crits in a row grants additional 2x damage on next ability
+5. 'Attack' ability crits have .5/1/1.5/2/2.5% chance to give free casting
+6. 3% crit chance per ability point consumed on 'Rend' and 'Blast'
+
+## D. Energize
+1. 'Energize' sets energy to 62/64/66/68/70 
+2. 'Energize' has 20/40/60/80/100% chance to add ability point
+3. 'Energize' has 3/6/10% chance to proc free-cast
+4. Casting 'Energize' while above 60% of max resources grants 3/6/10% additional damage for 10 sec
+
+## E. Resources
+1. All finishers cost reduced by 1/2/3/4/5
+2. Resource max is now 110/120/130
+3. Passive resource trickle has a 20/40/60% chance to proc 2 additional resource
+4. Regen amount increased by 3/6/10 per tick
+5. Increase free-cast chance per sec by .2/.4/.6/.8/1%
+6. A free-cast 'Rend', 'Blast', or 'Buff' has a 4/8/12/15/20% chance per ability point consumed to return 10 resources
+
+## F. Attack
+1.E Increase 'Attack' damage by 2.5% (no cap)
+2. 'Attack' crit at 5 ability points heals for .5/1/1.5/2/2.5% of damage done
+3. 'Attack' has 20/40/60/80/100% chance to increase 'Rend' by 3 sec instead of 2
+4. 'Attack' crits reduce the Global CD by .02/.04/.06/.08/.1 sec for its casting
+
+## G. Rend
+1.E Increase 'Rend' tick damage by 2.5% (no cap)
+2. Increase 'Rend' base time by 1/2/3/4/5 sec
+3. Increase 'Rend' max tick increases from 'Attack' by 1/2/3/4/5 times (11 total)
+4. 'Rend' ticks have a 20/40/60/80/100% chance to add 2 additional resource per tick
+
+## H. Blast
+1.E Increase 'Blast' damage by 2.5% (no cap)
+2. Increase 'Blast' crit multiplier by .2/.4/.6/.8/1x
+3. 'Blast' has a 1/2/3/4/5% chance to do an additional 50% damage
+4. 'Blast' increases time for next boss attack by .2/.4/.6/.8/1 sec
+5. 'Blast' decreases boss damage by 10/20/30/40/50% for next 5 sec
+
+## I. Buff
+1. Increase amount of damage given from 'Buff' by 2/4/6/8/10% 
+2. Increase 'Buff' duration by 1/2/3/4/5 sec
+3. Gives 'Rend' and 'Blast' a 4/8/12/16/20% per point consumed to increase 'Buff' remaining time by 2 sec.
+
+## J. Healing
+1. Increase 'Heal' by 2.5% per (no cap)
+2. Increase 'Heal' damage by 10% per (no cap)
+3. Increase 'Heal' by 20/40/60/80/100% when below 30% hp
+4. Casting 'Heal' on yourself while at 100% HP places a heal-over-time on you for 100/150/200% its overhealed amount over 6 seconds. Can occur once per 10 sec
+5. Passively regenerates 10/20/30/40/50 hp per sec
+
+## K. Defense
+1. Increase max hp by 10% (no cap)
+2. chance to dodge boss attacks by 2.5% per (Max 8)
+3. Each second without being hit reduces next hit by 1/2/3% (stacks 10 times max)
+4.E #-# Swing that would kill you reduces you to 1 hp instead (once per encounter)
+5. Boss crits on you increase your next 'Attack' or 'Blast' crit chance by 100%
+6. Reduces boss crits to 1.9/1.8/1.7x down from 2
+7. Reduces all damage taken by 4/8/12/16/20% per ability point consumed for next 1 sec after 'Rend' or 'Blast' is cast
+

@@ -1,0 +1,212 @@
+# Wanderworld — 3-Tree Talent System (First Pass v1)
+
+Source talents: Talent_Ideas_v2.txt. IDs in [brackets] map back to that file so you
+can cross-reference. NEW = a node I added to balance a tree (not in the ideas file).
+
+================================================================================
+## DESIGN MODEL
+================================================================================
+
+Three trees, each with its own identity:
+- ABILITIES — what your buttons do: scale Attack / Rend / Blast / Buff + crit damage.
+- DEFENSE   — staying alive: mitigation, healing, boss control.
+- MISC      — the engine: resource economy, energize, free-cast tempo, the opener.
+
+"Balanced" here means **balanced in desirability**, not identical node counts:
+no tree is a must-have or a trap, every point competes, and early/mid builds
+should *want* to dip across trees (see CROSS-TREE SYNERGY). End-game can go wacky.
+
+### Tier gating
+Tiers unlock by points spent **in that tree** (not total):
+- Tier 1: 0 spent
+- Tier 2: 6 spent in tree
+- Tier 3: 14 spent in tree
+- Tier 4 (capstones / endcaps): 22 spent in tree
+
+### Legend
+- E   = endcap. A tree can hold several; they're optional, often "no cap" point sinks.
+- #-# = requires the node listed as its prereq to be MAXED first.
+- (n) = number of ranks (= points to max that node).
+
+### Free-cast (global definition)
+A free-cast means the ability costs **no resource**. The Global CD **still applies**
+— a free-cast does not skip the GCD. The only thing that touches the GCD anywhere in
+the trees is [F4] (Attack crits shave the GCD). Used by C5, D3, E5, E6 — all identical.
+
+================================================================================
+## POINT BUDGET (first pass — see note)
+================================================================================
+
+Non-infinite points to fully clear each tree (endcaps excluded, they overflow):
+
+  ABILITIES  ~70
+  MISC       ~71
+  DEFENSE    ~61  <-- +5 from NEW [block]; still ~13% light. See OPEN QUESTIONS.
+
+A run hands out small, frequent points, so nobody clears a tree in early/mid —
+you specialize down a branch. The Defense gap is called out below rather than
+papered over.
+
+================================================================================
+## TREE 1 — ABILITIES
+================================================================================
+Identity: raw output. Branches let you specialize (Attack / Rend / Blast / Crit /
+Buff). You can't afford all branches early, which is where build identity comes from.
+
+--- Tier 1 (0 spent) ---
+[A1] (5)  +2/4/6/8/10% damage to Attack, Rend, and Blast.        <- universal opener
+[C1] (3)  +crit chance 2.5% per rank (max +8% total).
+[I1] (5)  +Buff damage 2/4/6/8/10%.
+
+--- Tier 2 (6 spent) — branches open ---
+ATTACK/REND BRIDGE:
+[F3] (5)  Attack: 20/40/60/80/100% chance to extend Rend by 3s instead of 2s.
+REND:
+[G2] (5)  +Rend base time 1/2/3/4/5s.
+BLAST:
+[H3] (5)  Blast: 1/2/3/4/5% chance to deal an additional 50% damage.
+BUFF:
+[I2] (5)  +Buff duration 1/2/3/4/5s.
+TEMPO:
+[A3] (3)  +1/2/3% stacking damage (max 3 stacks) for keeping GCDs <1.4s apart.
+
+--- Tier 3 (14 spent) ---
+CRIT CORE:
+[C2] (5)  Crits deal 2.1/2.2/2.3/2.4/2.5x.
+[C6] (1)  +3% crit chance per ability point consumed on Rend & Blast.
+[C3] (5)  Crits grant 1/2/3/4/5 resources.                       <- feeds the economy
+REND:
+[G3] (5)  +Rend max tick increases from Attack by 1-5 (11 total).
+[G4] (5)  Rend ticks: 20-100% chance to add 2 resource per tick. <- feeds the economy
+BLAST:
+[H2] (5)  +Blast crit multiplier .2/.4/.6/.8/1x.
+BUFF:
+[I3] (5)  Rend/Blast: 4/8/12/16/20% per point consumed to extend Buff by 2s.
+TEMPO:
+[A4] (3)  Every 15/12/9 casts, next ability +20% damage.
+
+--- Tier 4 (22 spent) — capstones ---
+[F1] E    +Attack damage 2.5% (no cap).
+[G1] E    +Rend tick damage 2.5% (no cap).
+[H1] E    +Blast damage 2.5% (no cap).
+[C4] (1)  3 Attack-or-Blast crits in a row (any combination) -> next ability's
+          damage x2, applied MULTIPLICATIVELY (stacks on top of C2/H2).
+[C5] E #-#(C2)  Attack crits: .5/1/1.5/2/2.5% chance to grant a free-cast.
+
+Synergy note: Crit (C-branch) is the spine — C1->C2->C6 makes every finisher a
+near-guaranteed big crit, and C3/G4 turn that into resources, so a crit build
+partly funds its own economy (eases reliance on MISC). Buff (I1/I2/I3) wants you
+already spamming Rend/Blast, so it pairs with the Rend or Blast branch, not alone.
+
+================================================================================
+## TREE 2 — DEFENSE
+================================================================================
+Identity: survival + boss control + healing. Note Blast's boss-debuffs ([H4]/[H5])
+and Attack's self-heal ([F2]) live here, so an offense build that uses those
+abilities is naturally pulled to dip Defense.
+
+--- Tier 1 (0 spent) ---
+[K1] E    +max HP 10% (no cap).
+[J5] (5)  Passively regenerate 10/20/30/40/50 HP/sec.
+[B6] (5)  Reduce damage taken 10% for first 5/10/15/20/25s of encounter.
+
+--- Tier 2 (6 spent) ---
+[K2] (3)  +2.5% dodge per rank (max +8%).
+[K6] (3)  Reduce boss crits to 1.9/1.8/1.7x (from 2x).
+[J3] (5)  +Heal 20/40/60/80/100% when below 30% HP.
+[H4] (5)  Blast increases time to next boss attack by .2-1s.     <- offense->defense
+[B5] (5)  20-100% chance to avoid first damage in first 10s.
+NEW [block] (5)  2/4/6/8/10% chance to halve an incoming hit (crits included). <- anti-burst
+
+--- Tier 3 (14 spent) ---
+[K3] (3)  Each second un-hit, next hit -1/2/3% (stacks 10x).
+[K5] (3)  Boss crit on you -> +100% crit chance on your next Attack/Blast.
+[J1] E    +Heal amount 2.5% (no cap).
+[H5] (5)  Blast reduces boss damage 10-50% for next 5s.          <- offense->defense
+[F2] (5)  Attack crit at 5 points heals .5-2.5% of damage done.  <- crit->sustain
+
+--- Tier 4 (22 spent) — capstones ---
+[K7] (5)  -4/8/12/16/20% damage per point consumed for 1s after Rend/Blast cast.
+[J2] E    +Heal damage 10% (no cap).
+[J4] (3)  Overheal HoT 100/150/200% of overheal over 6s (once / 10s).
+[K4] E #-#(K3)  A killing blow leaves you at 1 HP instead (once / encounter).
+
+Synergy note: K7 and K5 are gated behind casting Rend/Blast and getting hit, so a
+"bruiser" still has to run the offense rotation — it can't turtle passively. K7's
+per-point scaling means it competes with C6/I3 for your ability points: you choose
+whether a 5-point finisher buys damage, buff uptime, or a mitigation window.
+
+================================================================================
+## TREE 3 — MISC
+================================================================================
+Identity: the resource/tempo engine + the opener. This tree fuels the other two
+(points to spend, energy to cast, free-casts to chain), which is the main reason
+to mix trees rather than tunnel one.
+
+--- Tier 1 (0 spent) ---
+[E4] (3)  +Regen 3/6/10 per tick.
+[B2] (5)  Start encounter with 1/2/3/4/5 ability points.
+[A5] (2)  +player speed 10% (max +20%).
+
+--- Tier 2 (6 spent) ---
+[E1] (5)  All finishers cost -1/2/3/4/5.
+[E3] (3)  Passive trickle: 20/40/60% chance to proc +2 resource.
+[D1] (5)  Energize set-point: raises where Energize lands you, 60 -> 62/64/66/68/70
+          by rank. Does NOT touch the passive tick.
+[B1] (5)  +5/10/15/20/25% damage to all abilities in first 5s.
+[A2] (3)  +20/25/30% damage to boss under 25% HP.
+
+--- Tier 3 (14 spent) ---
+[E2] (3)  Max resource is now 110/120/130.
+[D2] (5)  Energize: 20-100% chance to add an ability point.
+[D4] (3)  Energize cast while above 60% of max (checked at cast time, before the
+          set) -> +3/6/10% damage for 10s. The "not a total waste" consolation.
+[E5] (5)  +free-cast chance/sec by .2/.4/.6/.8/1%.
+[B3] (5) #-#(B2)  Start with 1-5 points worth of Buff active.
+
+--- Tier 4 (22 spent) — capstones ---
+[D3] (3)  Energize: 3/6/10% chance to proc a free-cast.
+[E6] (5)  Free-cast Rend/Blast/Buff: 4-20% per point consumed to return 10 resource.
+[B4] (5) #-#(B3)  +20-60% crit chance on first ability.
+[F4] E    Attack crits reduce the Global CD by .02-.1s for that cast.
+
+Synergy note: B2 (start points) + D2 (energize -> points) are the point factory that
+every point-spender in the other two trees (C6, I3, K7) runs on. E1 (cheaper
+finishers) + free-casts (E5/D3/E6) let you fire those spenders more often. So MISC
+doesn't deal damage itself — it multiplies whatever you built elsewhere.
+
+================================================================================
+## CROSS-TREE SYNERGY (the early/mid "want to mix" hooks)
+================================================================================
+- POINT ECONOMY: MISC makes ability points (B2, D2); ABILITIES (C6, I3) and DEFENSE
+  (K7) spend them. Going pure-MISC has nothing to spend on; going pure-spender
+  starves. Early builds want a foot in both.
+- BLAST -> DEFENSE: H4/H5 sit in Defense but trigger off Blast (Abilities). A Blast
+  build gets boss control "for free" by dipping Defense.
+- CRIT -> ECONOMY: C3 (crits -> resources) and G4 (Rend -> resources) let a crit/Rend
+  ABILITIES build lean less on MISC regen, freeing points for DEFENSE.
+- CADENCE -> MITIGATION: K7 (Defense) and I3 (Buff uptime, Abilities) both reward
+  casting Rend/Blast on cadence, so the same rotation feeds offense, buff, and defense.
+
+================================================================================
+## SAMPLE EARLY/MID BUILDS (to sanity-check the mixing)
+================================================================================
+1. Crit-Blast: ABIL [C1,C2,H2,H3,C6] + MISC [B2,D2] (points to fuel C6) + DEFENSE
+   dip [H4] (Blast already cast). Wants all three trees by mid-game.
+2. Rend-DoT:  ABIL [G2,G3,G4,I1,I3] + MISC [E4,E2] + DEFENSE [J5]. Self-funds via G4.
+3. Bruiser:   DEFENSE [K1,K2,K3,K7] + MISC [B2,D2,E1] + ABIL [G2/H3] to power K7.
+
+================================================================================
+## OPEN QUESTIONS / TODO
+================================================================================
+1. [RESOLVED — partial] NEW [block] (5) added to Defense T2 (halve any hit, incl
+   crits). DEFENSE now ~61, still ~13% light. Two more NEW nodes would close it:
+   NEW [armor] (5) flat -X boss damage per hit;  NEW [second-wind] (3) heal X% on
+   boss kill (carries sustain between encounters). Say the word and I'll add them.
+2. [RESOLVED] C4 is MULTIPLICATIVE, trigger changed to 3 Attack-or-Blast crits in
+   a row (any combination). At maxed Blast: C2(2.5x) * H2(+1 -> effectively higher)
+   then C4 x2 on the next hit — a big but rare burst window. Working as intended.
+3. [RESOLVED] 1 point per encounter. Tier gates (6/14/22) kept as-is; T4 capstones
+   land late-run / second-run. To be confirmed in playtest once wired up.
+4. [RESOLVED] Free-cast = no resource cost, GCD still applies (see Legend). Only F4
+   touches the GCD. C5/D3/E5/E6 all use this one definition.

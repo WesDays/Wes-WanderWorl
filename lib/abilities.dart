@@ -22,6 +22,7 @@ class Ability {
     this.damageByPoints,
     this.heals = 0,
     this.canCrit = true,
+    this.coreDamage = false,
     this.opensPauseMenu = false,
   });
 
@@ -79,6 +80,10 @@ class Ability {
   /// Whether this ability's damage can roll a critical hit.
   final bool canCrit;
 
+  /// Whether this is one of the core damage abilities (Attack/Rend/Blast) that
+  /// the A1 talent's damage bonus applies to.
+  final bool coreDamage;
+
   /// Whether pressing this button opens the pause menu instead of casting. Such
   /// a button is purely UI: it touches no combat state (resource, cooldown, …).
   final bool opensPauseMenu;
@@ -133,6 +138,7 @@ const List<Ability> kAbilities = <Ability>[
     grantsAbilityPoint: true,
     extendsRend: true,
     damage: 3300,
+    coreDamage: true,
   ),
   Ability(
     name: 'Rend',
@@ -145,6 +151,7 @@ const List<Ability> kAbilities = <Ability>[
     consumesAbilityPoints: true,
     requiresAbilityPoints: true,
     appliesRend: true,
+    coreDamage: true,
     // Per-tick damage, dealt every kRendResourceInterval while active.
     damageByPoints: [420, 690, 960, 1230, 1500],
   ),
@@ -155,6 +162,7 @@ const List<Ability> kAbilities = <Ability>[
     cost: 35,
     consumesAbilityPoints: true,
     requiresAbilityPoints: true,
+    coreDamage: true,
     damageByPoints: [1160, 1900, 2600, 3400, 4150],
   ),
   Ability(

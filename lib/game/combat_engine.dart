@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../abilities.dart';
+import '../talents/talent_modifiers.dart';
 
 // --- Combat constants (moved from game_screen.dart; UI-only constants stay
 // there). These are the authoritative gameplay numbers the engine runs on.
@@ -137,9 +138,11 @@ class PlayerHealedEvent extends CombatEvent {
 class CombatSnapshot {
   const CombatSnapshot({
     required this.resource,
+    required this.maxResource,
     required this.abilityPoints,
     required this.bossHealth,
     required this.playerHealth,
+    required this.maxPlayerHealth,
     required this.averageDps,
     required this.onCooldown,
     required this.cooldownProgress,
@@ -152,9 +155,17 @@ class CombatSnapshot {
   });
 
   final int resource;
+
+  /// Talent-modified resource cap, for the HUD bar's denominator.
+  final int maxResource;
+
   final int abilityPoints;
   final int bossHealth;
   final int playerHealth;
+
+  /// Talent-modified max HP, for the HUD bar's denominator.
+  final int maxPlayerHealth;
+
   final double averageDps;
 
   /// True while the global cooldown is in flight.
@@ -181,19 +192,45 @@ class CombatSnapshot {
 /// Fields are public so tests and the game can read/seed them directly; the UI
 /// should read through [snapshot] rather than reaching in.
 class CombatEngine {
-  CombatEngine({math.Random? random}) : _random = random ?? math.Random();
+  CombatEngine({
+    math.Random? random,
+    TalentModifiers? modifiers,
+    int? startingHealth,
+  })  : _random = random ?? math.Random(),
+        _mods = modifiers ?? const TalentModifiers() {
+    // Resolve talent-modified caps/rates once; defaults reproduce the bare consts.
+    maxPlayerHealth = (kPlayerMaxHealth * _mods.maxHpMultiplier).round();
+    maxResource = kMaxResource + _mods.maxResourceBonus;
+    regenAmount = kRegenAmount + _mods.regenAmountBonus;
+    critChance = (kCritChance + _mods.critChanceBonus).clamp(0.0, 1.0);
+    critMultiplier = _mods.critMultiplier;
+    _seedRunState();
+    // Continue resumes at the carried-over HP; a fresh run starts full.
+    if (startingHealth != null) {
+      playerHealth = startingHealth.clamp(0, maxPlayerHealth);
+    }
+  }
 
   final math.Random _random;
+  final TalentModifiers _mods;
+
   final List<CombatEvent> _events = [];
 
   /// The abilities backing the two timed effects, resolved once for tagging
   /// Rend's damage events.
   final Ability _rendAbility = kAbilities.firstWhere((a) => a.appliesRend);
 
-  int resource = kMaxResource;
+  // Talent-resolved caps/rates, derived in the constructor from [_mods].
+  late final int maxPlayerHealth;
+  late final int maxResource;
+  late final int regenAmount;
+  late final double critChance;
+  late final double critMultiplier;
+
+  int resource = 0;
   int abilityPoints = 0;
   int bossHealth = kBossMaxHealth;
-  int playerHealth = kPlayerMaxHealth;
+  int playerHealth = 0;
   int totalDamage = 0;
 
   /// Combat time accumulated from [tick]; the denominator of the average DPS.
@@ -241,9 +278,11 @@ class CombatEngine {
 
   CombatSnapshot snapshot() => CombatSnapshot(
     resource: resource,
+    maxResource: maxResource,
     abilityPoints: abilityPoints,
     bossHealth: bossHealth,
     playerHealth: playerHealth,
+    maxPlayerHealth: maxPlayerHealth,
     averageDps: averageDps,
     onCooldown: onCooldown,
     cooldownProgress: cooldownProgress,
@@ -278,8 +317,8 @@ class CombatEngine {
     _regenAccum += dt;
     while (_regenAccum >= regenInterval) {
       _regenAccum -= regenInterval;
-      if (resource < kMaxResource) {
-        resource = (resource + kRegenAmount).clamp(0, kMaxResource);
+      if (resource < maxResource) {
+        resource = (resource + regenAmount).clamp(0, maxResource);
       }
     }
 
@@ -318,14 +357,20 @@ class CombatEngine {
     if (_random.nextDouble() < kFreeAbilityChance) _grantFreeAbility();
 
     // Always-on passive trickle, on top of the burst regen tick.
-    resource = (resource + kResourcePerSecond).clamp(0, kMaxResource);
+    resource = (resource + kResourcePerSecond).clamp(0, maxResource);
+
+    // Talent-granted health regen, while the player is alive.
+    if (_mods.healthRegenPerSecond > 0 && !playerDead) {
+      playerHealth =
+          (playerHealth + _mods.healthRegenPerSecond).clamp(0, maxPlayerHealth);
+    }
 
     if (rendSeconds > 0) {
       rendBonusElapsed++;
       if (rendBonusElapsed >= kRendResourceInterval.inSeconds) {
         rendBonusElapsed = 0;
         // Rend's resource and damage land together on the same tick.
-        resource = (resource + kRendResourceBonus).clamp(0, kMaxResource);
+        resource = (resource + kRendResourceBonus).clamp(0, maxResource);
         _dealDamage(rendDamagePerTick, _rendAbility);
       }
       rendSeconds--;
@@ -362,18 +407,25 @@ class CombatEngine {
         ability.cost > 0 &&
         ability.dealsDamage;
 
-    if (!castFree && resource < ability.cost) return;
+    // Finisher cost reduction (E1) applies to point-consuming abilities.
+    final effectiveCost = ability.consumesAbilityPoints
+        ? math.max(0, ability.cost - _mods.finisherCostReduction)
+        : ability.cost;
+
+    if (!castFree && resource < effectiveCost) return;
     if (ability.requiresAbilityPoints && abilityPoints == 0) return;
 
     // Buff/Rend scale with points held now, before they are consumed.
     final pointsAtCast = abilityPoints;
 
     if (ability.setsResourceTo != null) {
-      resource = ability.setsResourceTo!;
+      // Energize set-point, raised by D1 and clamped to the resource cap.
+      resource = (ability.setsResourceTo! + _mods.energizeSetPointBonus)
+          .clamp(0, maxResource);
     } else if (castFree) {
       freeAbility = false;
     } else {
-      resource -= ability.cost;
+      resource -= effectiveCost;
     }
     if (ability.consumesAbilityPoints) {
       abilityPoints = 0;
@@ -387,16 +439,19 @@ class CombatEngine {
       rendSeconds = kRendDuration.inSeconds;
       rendExtends = 0;
       rendBonusElapsed = 0;
-      rendDamagePerTick = _buffedDamage(ability.damageFor(pointsAtCast), buffed);
+      rendDamagePerTick =
+          _abilityDamage(ability.damageFor(pointsAtCast), ability, buffed);
     } else {
       // Every other ability deals its damage instantly; Rend's lands on its
       // ticks instead. damageFor returns 0 for non-damaging abilities.
-      critted =
-          _dealDamage(_buffedDamage(ability.damageFor(pointsAtCast), buffed), ability);
+      critted = _dealDamage(
+        _abilityDamage(ability.damageFor(pointsAtCast), ability, buffed),
+        ability,
+      );
     }
     if (ability.heals > 0) {
       final healed = _rollDamage(ability.heals);
-      playerHealth = (playerHealth + healed).clamp(0, kPlayerMaxHealth);
+      playerHealth = (playerHealth + healed).clamp(0, maxPlayerHealth);
       _events.add(PlayerHealedEvent(ability, healed));
     }
     if (ability.grantsAbilityPoint) {
@@ -410,7 +465,7 @@ class CombatEngine {
       rendExtends++;
     }
     if (ability.appliesBuff) {
-      buffSeconds = _buffSecondsFor(pointsAtCast);
+      buffSeconds = _buffSecondsFor(pointsAtCast) + _mods.buffDurationBonus;
     }
 
     // Spending ability points has a 20%-per-point chance to grant a free cast,
@@ -424,13 +479,20 @@ class CombatEngine {
     cooldownRemaining = _seconds(kCooldown);
   }
 
+  /// Seeds the per-encounter starting state from the resolved talent values:
+  /// full resource, the talent's starting ability points, a fresh boss, and full
+  /// (talent-modified) player health.
+  void _seedRunState() {
+    resource = maxResource;
+    abilityPoints = _mods.startingAbilityPoints;
+    bossHealth = kBossMaxHealth;
+    playerHealth = maxPlayerHealth;
+  }
+
   /// Restores the fight to its starting state.
   void reset() {
     _events.clear();
-    resource = kMaxResource;
-    abilityPoints = 0;
-    bossHealth = kBossMaxHealth;
-    playerHealth = kPlayerMaxHealth;
+    _seedRunState();
     totalDamage = 0;
     elapsedSeconds = 0;
     cooldownRemaining = 0;
@@ -463,9 +525,15 @@ class CombatEngine {
     freeAbility = true;
   }
 
-  /// [amount] with the Buff's [kBuffDamageBonus] applied when [buffed].
-  int _buffedDamage(int amount, bool buffed) =>
-      buffed ? (amount * (1 + kBuffDamageBonus)).round() : amount;
+  /// Resolves an ability's outgoing damage: the A1 core-damage multiplier (for
+  /// Attack/Rend/Blast) and the Buff bonus when [buffed]. The base
+  /// [kBuffDamageBonus] is raised by I1.
+  int _abilityDamage(int amount, Ability ability, bool buffed) {
+    var result = amount.toDouble();
+    if (ability.coreDamage) result *= _mods.coreDamageMultiplier;
+    if (buffed) result *= 1 + kBuffDamageBonus + _mods.buffDamageBonus;
+    return result.round();
+  }
 
   /// [amount] rolled with up to ±[kDamageVariance] swing.
   int _rollDamage(int amount) {
@@ -483,7 +551,7 @@ class CombatEngine {
         kBossDamageMin + _random.nextInt(kBossDamageMax - kBossDamageMin + 1);
     final dealt = crit ? base * kCritMultiplier : base;
     final before = playerHealth;
-    playerHealth = (playerHealth - dealt).clamp(0, kPlayerMaxHealth);
+    playerHealth = (playerHealth - dealt).clamp(0, maxPlayerHealth);
     _events.add(PlayerHitEvent(dealt, crit));
     if (playerHealth <= 0 && before > 0) _events.add(const PlayerDiedEvent());
   }
@@ -493,8 +561,9 @@ class CombatEngine {
   /// [BossDiedEvent] on the killing blow). Returns whether it critted.
   bool _dealDamage(int amount, Ability source) {
     if (amount <= 0) return false;
-    final crit = source.canCrit && _random.nextDouble() < kCritChance;
-    final rolled = _rollDamage(amount) * (crit ? kCritMultiplier : 1);
+    final crit = source.canCrit && _random.nextDouble() < critChance;
+    final rolled =
+        (_rollDamage(amount) * (crit ? critMultiplier : 1.0)).round();
     final before = bossHealth;
     bossHealth = (bossHealth - rolled).clamp(0, kBossMaxHealth);
     // Count damage actually applied, so overkill doesn't inflate the average.

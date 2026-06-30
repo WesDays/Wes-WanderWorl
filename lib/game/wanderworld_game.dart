@@ -5,6 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart' show Color;
 
 import '../state/combat_providers.dart';
+import '../talents/talent_modifiers.dart';
 import 'boss_component.dart';
 import 'combat_engine.dart';
 import 'player_component.dart';
@@ -14,7 +15,12 @@ import 'player_component.dart';
 /// it ticks the engine, publishes a [CombatSnapshot], and routes engine events
 /// to component animations and the floating-damage feed.
 class WanderworldGame extends FlameGame with RiverpodGameMixin {
-  final CombatEngine engine = CombatEngine();
+  WanderworldGame({
+    TalentModifiers modifiers = const TalentModifiers(),
+    int? startingHealth,
+  }) : engine = CombatEngine(modifiers: modifiers, startingHealth: startingHealth);
+
+  final CombatEngine engine;
 
   late final PlayerComponent _player;
   late final BossComponent _boss;
