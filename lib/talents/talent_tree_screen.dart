@@ -4,17 +4,25 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../state/run_state.dart';
 import 'talent.dart';
 
-/// The talent tree, reachable from the victory screen. Three columns
-/// (Abilities / Defense / Misc), each grouped into tiers that unlock by
-/// points-spent-in-tree. Tapping a node's + spends a banked point.
-class TalentTreeScreen extends ConsumerWidget {
+/// The talent tree, reachable from the victory screen. One tree is shown at a
+/// time (picked from the header dropdown); its tiers stack down the screen, and
+/// each tier lays its nodes out horizontally so every choice is visible without
+/// scrolling within the tier. Tapping a node's + spends a banked point.
+class TalentTreeScreen extends ConsumerStatefulWidget {
   const TalentTreeScreen({super.key, required this.onDone});
 
   /// Returns to the victory screen.
   final VoidCallback onDone;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<TalentTreeScreen> createState() => _TalentTreeScreenState();
+}
+
+class _TalentTreeScreenState extends ConsumerState<TalentTreeScreen> {
+  TalentTree _tree = TalentTree.abilities;
+
+  @override
+  Widget build(BuildContext context) {
     final run = ref.watch(runStateProvider);
     return Scaffold(
       backgroundColor: const Color(0xFF0B0E16),
@@ -24,17 +32,14 @@ class TalentTreeScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Header(points: run.bankedPoints, onDone: onDone),
-              const SizedBox(height: 8),
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    for (final tree in TalentTree.values)
-                      Expanded(child: _TreeColumn(tree: tree)),
-                  ],
-                ),
+              _Header(
+                points: run.bankedPoints,
+                tree: _tree,
+                onTreeChanged: (t) => setState(() => _tree = t),
+                onDone: widget.onDone,
               ),
+              const SizedBox(height: 8),
+              Expanded(child: _TreeView(tree: _tree)),
             ],
           ),
         ),
@@ -43,14 +48,22 @@ class TalentTreeScreen extends ConsumerWidget {
   }
 }
 
-class _Header extends StatelessWidget {
-  const _Header({required this.points, required this.onDone});
+class _Header extends ConsumerWidget {
+  const _Header({
+    required this.points,
+    required this.tree,
+    required this.onTreeChanged,
+    required this.onDone,
+  });
 
   final int points;
+  final TalentTree tree;
+  final ValueChanged<TalentTree> onTreeChanged;
   final VoidCallback onDone;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final spent = ref.watch(runStateProvider.notifier).pointsSpentInTree(tree);
     return Row(
       children: [
         const Text(
@@ -69,6 +82,40 @@ class _Header extends StatelessWidget {
             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
           ),
         ),
+        const SizedBox(width: 12),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+          decoration: BoxDecoration(
+            color: Colors.white10,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.white24),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<TalentTree>(
+              value: tree,
+              isDense: true,
+              dropdownColor: const Color(0xFF141824),
+              borderRadius: BorderRadius.circular(8),
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: Colors.white,
+              ),
+              items: [
+                for (final t in TalentTree.values)
+                  DropdownMenuItem(value: t, child: Text(t.label)),
+              ],
+              onChanged: (t) {
+                if (t != null) onTreeChanged(t);
+              },
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          '$spent spent',
+          style: const TextStyle(fontSize: 13, color: Colors.white54),
+        ),
         const Spacer(),
         FilledButton(
           onPressed: onDone,
@@ -82,54 +129,32 @@ class _Header extends StatelessWidget {
   }
 }
 
-class _TreeColumn extends ConsumerWidget {
-  const _TreeColumn({required this.tree});
+/// The selected tree: its tiers stacked vertically, each a horizontal row.
+class _TreeView extends ConsumerWidget {
+  const _TreeView({required this.tree});
 
   final TalentTree tree;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.watch(runStateProvider.notifier);
-    final spent = notifier.pointsSpentInTree(tree);
-    final tiers = <int>{for (final t in kTalents) if (t.tree == tree) t.tier };
+    final spent = ref.watch(runStateProvider.notifier).pointsSpentInTree(tree);
+    final tiers = <int>{for (final t in kTalents) if (t.tree == tree) t.tier};
     final sortedTiers = tiers.toList()..sort();
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+    return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: Colors.white24)),
-            ),
-            child: Text(
-              '${tree.label}  ·  $spent spent',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-          ),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.only(top: 8),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  for (final tier in sortedTiers)
-                    _TierBlock(tree: tree, tier: tier, spentInTree: spent),
-                ],
-              ),
-            ),
-          ),
+          for (final tier in sortedTiers)
+            _TierRow(tree: tree, tier: tier, spentInTree: spent),
         ],
       ),
     );
   }
 }
 
-class _TierBlock extends StatelessWidget {
-  const _TierBlock({
+class _TierRow extends StatelessWidget {
+  const _TierRow({
     required this.tree,
     required this.tier,
     required this.spentInTree,
@@ -147,23 +172,34 @@ class _TierBlock extends StatelessWidget {
         kTalents.where((t) => t.tree == tree && t.tier == tier).toList();
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 4, left: 2),
+          padding: const EdgeInsets.only(top: 8, bottom: 4, left: 2),
           child: Text(
-            unlocked
-                ? 'Tier $tier'
-                : 'Tier $tier — locked ($threshold in tree)',
+            unlocked ? 'Tier $tier' : 'Tier $tier — locked ($threshold in tree)',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w600,
               color: unlocked ? Colors.white70 : Colors.white30,
             ),
           ),
         ),
-        for (final talent in nodes)
-          _TalentTile(talent: talent, tierUnlocked: unlocked),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          // IntrinsicHeight bounds the row's height (= tallest tile) so the
+          // tiles can stretch to equal heights; without it, the surrounding
+          // scroll views leave height unbounded and stretch throws.
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final talent in nodes)
+                  _TalentTile(talent: talent, tierUnlocked: unlocked),
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
@@ -197,7 +233,8 @@ class _TalentTile extends ConsumerWidget {
     return Opacity(
       opacity: tierUnlocked ? 1.0 : 0.5,
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 3),
+        width: 168,
+        margin: const EdgeInsets.only(right: 6, bottom: 2),
         padding: const EdgeInsets.all(8),
         decoration: BoxDecoration(
           color: maxed ? const Color(0xFF14301A) : Colors.white10,
@@ -206,49 +243,47 @@ class _TalentTile extends ConsumerWidget {
             color: canAllocate ? const Color(0xFF66BB6A) : Colors.white12,
           ),
         ),
-        child: Row(
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          talent.name,
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      if (talent.isEndcap) _tag('endcap', const Color(0xFF8E24AA)),
-                      if (!talent.wired)
-                        _tag('soon', const Color(0xFF616161)),
-                    ],
+            Row(
+              children: [
+                Flexible(
+                  child: Text(
+                    talent.name,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    desc,
-                    style: const TextStyle(fontSize: 11, color: Colors.white70),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
+                ),
+                if (talent.isEndcap) _tag('endcap', const Color(0xFF8E24AA)),
+                if (!talent.wired) _tag('soon', const Color(0xFF616161)),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              desc,
+              style: const TextStyle(fontSize: 11, color: Colors.white70),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
                     '$rankText${status.isEmpty ? '' : '  ·  $status'}',
                     style: TextStyle(
                       fontSize: 10,
                       color: status.isEmpty ? Colors.white38 : Colors.amber,
                     ),
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 6),
-            _PlusButton(
-              enabled: canAllocate,
-              onTap: () => notifier.allocate(talent.id),
+                ),
+                const SizedBox(width: 6),
+                _PlusButton(
+                  enabled: canAllocate,
+                  onTap: () => notifier.allocate(talent.id),
+                ),
+              ],
             ),
           ],
         ),

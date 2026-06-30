@@ -58,16 +58,30 @@ class _AppShellState extends ConsumerState<_AppShell> {
   TalentModifiers _modifiers = const TalentModifiers();
   int? _startingHealth;
 
+  /// Where the talent screen's Back button should return to (menu vs victory).
+  _Screen _talentsReturn = _Screen.victory;
+
   RunNotifier get _run => ref.read(runStateProvider.notifier);
 
-  /// Start a brand-new run from the menu: wipe the loadout, full HP.
+  /// Start a brand-new run from the menu, full HP. TEMP (debug): keeps whatever
+  /// talents were set from the menu so they apply in-game, instead of wiping.
+  /// Restore `_run.wipe()` + `resolveModifiers(const {})` to ship.
   void _startFreshRun() {
-    _run.wipe();
+    final ranks = ref.read(runStateProvider).ranks;
     setState(() {
-      _modifiers = resolveModifiers(const {});
+      _modifiers = resolveModifiers(ranks);
       _startingHealth = null;
       _encounterId++;
       _screen = _Screen.playing;
+    });
+  }
+
+  /// TEMP (debug): open the talent tree from the menu with points to spend.
+  void _openDebugTalents() {
+    _run.grantDebugPoints();
+    setState(() {
+      _talentsReturn = _Screen.menu;
+      _screen = _Screen.talents;
     });
   }
 
@@ -98,7 +112,10 @@ class _AppShellState extends ConsumerState<_AppShell> {
   @override
   Widget build(BuildContext context) {
     return switch (_screen) {
-      _Screen.menu => MainMenuScreen(onStart: _startFreshRun),
+      _Screen.menu => MainMenuScreen(
+        onStart: _startFreshRun,
+        onTalents: _openDebugTalents,
+      ),
       _Screen.playing => GameScreen(
         key: ValueKey(_encounterId),
         modifiers: _modifiers,
@@ -110,7 +127,10 @@ class _AppShellState extends ConsumerState<_AppShell> {
       _Screen.victory => EncounterEndScreen(
         won: true,
         onContinue: _continue,
-        onTalents: () => setState(() => _screen = _Screen.talents),
+        onTalents: () => setState(() {
+          _talentsReturn = _Screen.victory;
+          _screen = _Screen.talents;
+        }),
         onMainMenu: () => setState(() => _screen = _Screen.menu),
       ),
       _Screen.defeat => EncounterEndScreen(
@@ -124,7 +144,7 @@ class _AppShellState extends ConsumerState<_AppShell> {
         },
       ),
       _Screen.talents => TalentTreeScreen(
-        onDone: () => setState(() => _screen = _Screen.victory),
+        onDone: () => setState(() => _screen = _talentsReturn),
       ),
     };
   }

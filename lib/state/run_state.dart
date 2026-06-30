@@ -44,6 +44,11 @@ class RunState {
 /// talent trees; revert to 1 for real play.
 const int kPointsPerVictory = 10;
 
+/// TEMP (debug): banked points handed out so the talent trees can be exercised
+/// without grinding encounters. Remove together with [RunNotifier.grantDebugPoints]
+/// and the menu's debug Talents button.
+const int kDebugStartingPoints = 50;
+
 class RunNotifier extends Notifier<RunState> {
   @override
   RunState build() => const RunState();
@@ -94,6 +99,14 @@ class RunNotifier extends Notifier<RunState> {
 
   /// Wipes the whole run (defeat, or a fresh Start from the menu).
   void wipe() => state = const RunState();
+
+  /// TEMP (debug): tops banked points up to [kDebugStartingPoints] so the talent
+  /// trees are spendable without playing through encounters. Remove later.
+  void grantDebugPoints() {
+    if (state.bankedPoints < kDebugStartingPoints) {
+      state = state.copyWith(bankedPoints: kDebugStartingPoints);
+    }
+  }
 }
 
 final runStateProvider = NotifierProvider<RunNotifier, RunState>(
